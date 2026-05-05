@@ -1,0 +1,142 @@
+2026-05-05 16:02:58,896 ERROR MT5AdaptiveTradingBot: Error inicial leyendo market_snapshots.json
+Traceback (most recent call last):
+  File "c:/Users/eddgt/Desktop/new/ejet/Pruebas/boteddver1.py", line 1205, in __init__
+    self.market_snapshots = self.reload_market_snapshots()
+  File "c:/Users/eddgt/Desktop/new/ejet/Pruebas/boteddver1.py", line 1735, in reload_market_snapshots
+    is_scheduler_call = (self.scheduler_reload_time is not None and
+AttributeError: 'MT5AdaptiveTradingBot' object has no attribute 'scheduler_reload_time'
+2026-05-05 16:12:25,310 ERROR MT5AdaptiveTradingBot: Error inicial leyendo market_snapshots.json
+Traceback (most recent call last):
+  File "boteddver1.py", line 1205, in __init__
+    self.market_snapshots = self.reload_market_snapshots()
+  File "boteddver1.py", line 1735, in reload_market_snapshots
+    is_scheduler_call = (self.scheduler_reload_time is not None and
+AttributeError: 'MT5AdaptiveTradingBot' object has no attribute 'scheduler_reload_time'
+2026-05-05 16:17:51,246 ERROR MT5AdaptiveTradingBot: Error inicial leyendo market_snapshots.json
+Traceback (most recent call last):
+  File "boteddver1.py", line 1205, in __init__
+    self.market_snapshots = self.reload_market_snapshots()
+  File "boteddver1.py", line 1735, in reload_market_snapshots
+    is_scheduler_call = (self.scheduler_reload_time is not None and
+AttributeError: 'MT5AdaptiveTradingBot' object has no attribute 'scheduler_reload_time'
+2026-05-05 16:18:24,988 ERROR MT5AdaptiveTradingBot: Error inicial leyendo market_snapshots.json
+Traceback (most recent call last):
+  File "boteddver1.py", line 1205, in __init__
+    self.market_snapshots = self.reload_market_snapshots()
+  File "boteddver1.py", line 1735, in reload_market_snapshots
+    is_scheduler_call = (self.scheduler_reload_time is not None and
+AttributeError: 'MT5AdaptiveTradingBot' object has no attribute 'scheduler_reload_time'
+2026-05-05 16:19:16,906 ERROR MT5AdaptiveTradingBot: Error inicial leyendo market_snapshots.json
+Traceback (most recent call last):
+  File "boteddver1.py", line 1205, in __init__
+    self.market_snapshots = self.reload_market_snapshots()
+  File "boteddver1.py", line 1735, in reload_market_snapshots
+    is_scheduler_call = (self.scheduler_reload_time is not None and
+AttributeError: 'MT5AdaptiveTradingBot' object has no attribute 'scheduler_reload_time'
+2026-05-05 16:19:55,946 ERROR MT5AdaptiveTradingBot: Error inicial leyendo market_snapshots.json
+Traceback (most recent call last):
+  File "boteddver1.py", line 1205, in __init__
+    self.market_snapshots = self.reload_market_snapshots()
+  File "boteddver1.py", line 1735, in reload_market_snapshots
+    is_scheduler_call = (self.scheduler_reload_time is not None and
+AttributeError: 'MT5AdaptiveTradingBot' object has no attribute 'scheduler_reload_time'
+2026-05-05 16:23:44,424 ERROR MT5AdaptiveTradingBot: Error inicial leyendo market_snapshots.json
+Traceback (most recent call last):
+  File "boteddver1.py", line 1205, in __init__
+    self.market_snapshots = self.reload_market_snapshots()
+  File "boteddver1.py", line 1735, in reload_market_snapshots
+    is_scheduler_call = (self.scheduler_reload_time is not None and
+AttributeError: 'MT5AdaptiveTradingBot' object has no attribute 'scheduler_reload_time'
+2026-05-05 16:24:49,862 ERROR MT5AdaptiveTradingBot: Error inicial leyendo market_snapshots.json
+Traceback (most recent call last):
+  File "c:/Users/eddgt/Desktop/new/ejet/Pruebas/boteddver1.py", line 1205, in __init__
+    self.market_snapshots = self.reload_market_snapshots()
+  File "c:/Users/eddgt/Desktop/new/ejet/Pruebas/boteddver1.py", line 1735, in reload_market_snapshots
+    is_scheduler_call = (self.scheduler_reload_time is not None and
+AttributeError: 'MT5AdaptiveTradingBot' object has no attribute 'scheduler_reload_time'
+2026-05-05 16:26:10,626 ERROR MT5AdaptiveTradingBot: Error inicial leyendo market_snapshots.json
+Traceback (most recent call last):
+  File "c:/Users/eddgt/Desktop/new/ejet/Pruebas/boteddver1.py", line 1205, in __init__
+    self.market_snapshots = self.reload_market_snapshots()
+  File "c:/Users/eddgt/Desktop/new/ejet/Pruebas/boteddver1.py", line 1735, in reload_market_snapshots
+    is_scheduler_call = (self.scheduler_reload_time is not None and
+AttributeError: 'MT5AdaptiveTradingBot' object has no attribute 'scheduler_reload_time'
+2026-05-05 16:31:36,723 ERROR MT5AdaptiveTradingBot: Error inicial leyendo market_snapshots.json
+Traceback (most recent call last):
+  File "boteddver1.py", line 1205, in __init__
+    self.market_snapshots = self.reload_market_snapshots()
+  File "boteddver1.py", line 1735, in reload_market_snapshots
+    is_scheduler_call = (self.scheduler_reload_time is not None and
+AttributeError: 'MT5AdaptiveTradingBot' object has no attribute 'scheduler_reload_time'
+2026-05-05 16:35:16,841 ERROR MT5AdaptiveTradingBot: Error inicial leyendo market_snapshots.json
+Traceback (most recent call last):
+  File "c:/Users/eddgt/Desktop/new/ejet/Pruebas/boteddver1.py", line 1205, in __init__
+    self.market_snapshots = self.reload_market_snapshots()
+  File "c:/Users/eddgt/Desktop/new/ejet/Pruebas/boteddver1.py", line 1735, in reload_market_snapshots
+    is_scheduler_call = (self.scheduler_reload_time is not None and
+AttributeError: 'MT5AdaptiveTradingBot' object has no attribute 'scheduler_reload_time'
+2026-05-05 16:49:44,673 ERROR MT5AdaptiveTradingBot: Error inicial leyendo market_snapshots.json
+Traceback (most recent call last):
+  File "c:/Users/eddgt/Desktop/new/ejet/Pruebas/boteddver1.py", line 1205, in __init__
+    self.market_snapshots = self.reload_market_snapshots()
+  File "c:/Users/eddgt/Desktop/new/ejet/Pruebas/boteddver1.py", line 1751, in reload_market_snapshots
+    is_scheduler_call = (self.scheduler_reload_time is not None and
+AttributeError: 'MT5AdaptiveTradingBot' object has no attribute 'scheduler_reload_time'
+2026-05-05 16:51:37,867 ERROR MT5AdaptiveTradingBot: Error inicial leyendo market_snapshots.json
+Traceback (most recent call last):
+  File "c:/Users/eddgt/Desktop/new/ejet/Pruebas/boteddver1.py", line 1205, in __init__
+    self.market_snapshots = self.reload_market_snapshots()
+  File "c:/Users/eddgt/Desktop/new/ejet/Pruebas/boteddver1.py", line 1751, in reload_market_snapshots
+    is_scheduler_call = (self.scheduler_reload_time is not None and
+AttributeError: 'MT5AdaptiveTradingBot' object has no attribute 'scheduler_reload_time'
+2026-05-05 16:55:38,790 ERROR MT5AdaptiveTradingBot: Error inicial leyendo market_snapshots.json
+Traceback (most recent call last):
+  File "c:/Users/eddgt/Desktop/new/ejet/Pruebas/boteddver1.py", line 1205, in __init__
+    self.market_snapshots = self.reload_market_snapshots()
+  File "c:/Users/eddgt/Desktop/new/ejet/Pruebas/boteddver1.py", line 1751, in reload_market_snapshots
+    is_scheduler_call = (self.scheduler_reload_time is not None and
+AttributeError: 'MT5AdaptiveTradingBot' object has no attribute 'scheduler_reload_time'
+2026-05-05 16:57:51,271 ERROR MT5AdaptiveTradingBot: Error inicial leyendo market_snapshots.json
+Traceback (most recent call last):
+  File "c:/Users/eddgt/Desktop/new/ejet/Pruebas/boteddver1.py", line 1212, in __init__
+    self.market_snapshots = self.reload_market_snapshots()
+  File "c:/Users/eddgt/Desktop/new/ejet/Pruebas/boteddver1.py", line 1758, in reload_market_snapshots
+    is_scheduler_call = (self.scheduler_reload_time is not None and
+AttributeError: 'MT5AdaptiveTradingBot' object has no attribute 'scheduler_reload_time'
+2026-05-05 17:05:38,312 ERROR MT5AdaptiveTradingBot: Error inicial leyendo market_snapshots.json
+Traceback (most recent call last):
+  File "c:/Users/eddgt/Desktop/new/ejet/Pruebas/boteddver1.py", line 1213, in __init__
+    self.market_snapshots = self.reload_market_snapshots()
+  File "c:/Users/eddgt/Desktop/new/ejet/Pruebas/boteddver1.py", line 1759, in reload_market_snapshots
+    is_scheduler_call = (self.scheduler_reload_time is not None and
+AttributeError: 'MT5AdaptiveTradingBot' object has no attribute 'scheduler_reload_time'
+2026-05-05 17:06:08,732 INFO MT5AdaptiveTradingBot: [INIT-PREFILL] ✓ prefill_market_data_and_return() retornó 500 snapshots en memoria
+2026-05-05 17:06:08,756 ERROR MT5AdaptiveTradingBot: [MT5-EXCEPTION] ❌ EXCEPCIÓN agregando barra M1: no field of name volume
+2026-05-05 17:06:08,756 ERROR MT5AdaptiveTradingBot: [MT5-FALLBACK-EXCEPTION] ✓ Inyectado snapshot sintético URGENTE por excepción MT5: 4559.89
+2026-05-05 17:06:08,761 INFO MT5AdaptiveTradingBot: [MT5-PERSIST] ⚠️ Guardado archivo HISTÓRICO: 500 barras (GOLD, con fallback sintético)
+2026-05-05 17:06:08,761 INFO MT5AdaptiveTradingBot: [reload] FINAL: 500 snapshots (backup: 500, self: 500)
+2026-05-05 17:06:08,761 INFO MT5AdaptiveTradingBot: [INIT-RELOAD] ✓ reload_market_snapshots() retornó 500 snapshots (histórico)
+2026-05-05 17:06:08,761 INFO MT5AdaptiveTradingBot: [INIT-VERIFY] self.market_snapshots tiene 500 items tras reload
+2026-05-05 17:06:08,761 INFO MT5AdaptiveTradingBot: [INIT-FINAL] Estado final: market_snapshots = 500 items
+2026-05-05 17:12:55,547 ERROR MT5AdaptiveTradingBot: Error inicial leyendo market_snapshots.json
+Traceback (most recent call last):
+  File "c:/Users/eddgt/Desktop/new/ejet/Pruebas/boteddver1.py", line 1213, in __init__
+    self.market_snapshots = self.reload_market_snapshots()
+  File "c:/Users/eddgt/Desktop/new/ejet/Pruebas/boteddver1.py", line 1759, in reload_market_snapshots
+    is_scheduler_call = (self.scheduler_reload_time is not None and
+AttributeError: 'MT5AdaptiveTradingBot' object has no attribute 'scheduler_reload_time'
+2026-05-05 17:13:07,197 ERROR MT5AdaptiveTradingBot: Error inicial leyendo market_snapshots.json
+Traceback (most recent call last):
+  File "c:/Users/eddgt/Desktop/new/ejet/Pruebas/boteddver1.py", line 1213, in __init__
+    self.market_snapshots = self.reload_market_snapshots()
+  File "c:/Users/eddgt/Desktop/new/ejet/Pruebas/boteddver1.py", line 1759, in reload_market_snapshots
+    is_scheduler_call = (self.scheduler_reload_time is not None and
+AttributeError: 'MT5AdaptiveTradingBot' object has no attribute 'scheduler_reload_time'
+2026-05-05 17:13:26,041 INFO MT5AdaptiveTradingBot: [INIT-PREFILL] ✓ prefill_market_data_and_return() retornó 500 snapshots en memoria
+2026-05-05 17:13:26,060 ERROR MT5AdaptiveTradingBot: [MT5-EXCEPTION] ❌ EXCEPCIÓN agregando barra M1: no field of name volume
+2026-05-05 17:13:26,060 ERROR MT5AdaptiveTradingBot: [MT5-FALLBACK-EXCEPTION] ✓ Inyectado snapshot sintético URGENTE por excepción MT5: 4557.85
+2026-05-05 17:13:26,065 INFO MT5AdaptiveTradingBot: [MT5-PERSIST] ⚠️ Guardado archivo HISTÓRICO: 500 barras (GOLD, con fallback sintético)
+2026-05-05 17:13:26,065 INFO MT5AdaptiveTradingBot: [reload] FINAL: 500 snapshots (backup: 500, self: 500)
+2026-05-05 17:13:26,065 INFO MT5AdaptiveTradingBot: [INIT-RELOAD] ✓ reload_market_snapshots() retornó 500 snapshots (histórico)
+2026-05-05 17:13:26,065 INFO MT5AdaptiveTradingBot: [INIT-VERIFY] self.market_snapshots tiene 500 items tras reload
+2026-05-05 17:13:26,065 INFO MT5AdaptiveTradingBot: [INIT-FINAL] Estado final: market_snapshots = 500 items

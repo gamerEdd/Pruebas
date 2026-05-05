@@ -220,7 +220,7 @@ class MT5CacheManager:
     def _update_all_ticks(self):
         """Actualiza los últimos ticks de todos los símbolos"""
         try:
-            symbols_to_check = ['ETHUSD', 'EURUSD', 'GBPUSD']
+            symbols_to_check = ['XAUUSD', 'XAGUSD']
             with self.cache_lock:
                 for symbol in symbols_to_check:
                     try:
@@ -334,9 +334,16 @@ class MT5AdaptiveTradingBot:
         try:
             symbol = symbol or self.config['SYMBOL'].get()
             
-            # Obtener threshold en decimal
+            # Obtener threshold en decimal - USA THRESHOLD POR PAR (GOLD o SILVER)
             if threshold is None:
-                pips_value = self._safe_get('MICROTREND_THRESHOLD', 1.0)
+                # ⭐ USAR THRESHOLD ESPECÍFICO DEL PAR
+                if symbol.upper() == 'GOLD' or symbol == 'XAUUSD':
+                    pips_value = self._safe_get('GOLD_THRESHOLD', 18.0)
+                elif symbol.upper() == 'SILVER' or symbol == 'XAGUSD':
+                    pips_value = self._safe_get('SILVER_THRESHOLD', 15.0)
+                else:
+                    pips_value = self._safe_get('MICROTREND_THRESHOLD', 18.0)  # Default fallback
+                
                 pip_size = 0.01
                 threshold = pips_value * pip_size
 
@@ -557,11 +564,11 @@ class MT5AdaptiveTradingBot:
                 return (False, {'reason': 'Todas las velas son doji'})
 
             # ⭐ Adaptar requisitos por volatilidad del símbolo
-            symbol = symbol or self.config.get('SYMBOL', tk.StringVar(value='ETHUSD')).get()
+            symbol = symbol or self.config.get('SYMBOL', tk.StringVar(value='GOLD')).get()
             if 'GOLD' in symbol.upper():
                 min_candles_required = 6  # GOLD: más exigente (menos ruidoso)
             else:
-                min_candles_required = 5  # ETH/SOL: más flexible (más ruidoso)
+                min_candles_required = 5  # SILVER: más flexible (más ruidoso)
 
             # Debe haber mayoría clara de la dirección esperada
             if direction == 'BUY':
@@ -1096,8 +1103,8 @@ class MT5AdaptiveTradingBot:
         self.session_filter = TimeBasedSessionFilter(log_callback=self.add_log)
         self.correlation = CorrelationAnalyzer(log_callback=self.add_log)
         
-        # Historial para calibración dinámica y seguimiento
-        self.closed_trades_for_calibration = {}
+        # Histórico de trades removido: solo se usa datos de mercado actual
+        # self.closed_trades_for_calibration = {} # DESHABILITADO
         self.use_v12_analysis = tk.BooleanVar(value=True)
         self.last_confidence = 0
         
@@ -1108,12 +1115,12 @@ class MT5AdaptiveTradingBot:
             'SERVER': "MetaQuotes-Demo",
             'MAGIC_NUMBER': 123456,            
             # Configuración de trading básica
-            'SYMBOL': tk.StringVar(value="ETHUSD"),
-            'VOL': tk.DoubleVar(value=0.1),  # ⭐ ETHUSD: Volumen mínimo 0.1 (cambio de GOLD 0.01)
+            'SYMBOL': tk.StringVar(value="GOLD"),
+            'VOL': tk.DoubleVar(value=0.01),  # ⭐ GOLD: Volumen mínimo 0.01
             'TIMEFRAME': tk.StringVar(value="M1"),
             'CHECK_INTERVAL': tk.DoubleVar(value=0.05),  # ⭐ 50ms - Análisis ultra-rápido cada 50 milisegundos
             'OBJETIVO_Z': tk.IntVar(value=0),
-            'TRADE_INTERVAL': tk.DoubleVar(value=0.3),  # ⭐ VALORES DECIMALES: 0.3 = 30s | 0.1 = 10s | 1 = 60s | 2 = 120s
+            'TRADE_INTERVAL': tk.DoubleVar(value=1),  # ⭐ VALORES DECIMALES: 0.3 = 30s | 0.1 = 10s | 1 = 60s | 2 = 120s
             'MAX_SIMULTANEOUS_OPS': tk.IntVar(value=1),  # ⭐ OPTIMIZADO: Máximo 1 operación abierta para mejor control
             
             # Configuración de análisis
@@ -1127,11 +1134,12 @@ class MT5AdaptiveTradingBot:
             'MIN_TIME_BLUE': tk.IntVar(value=0),
             
             # Configuración de Take Profit y Stop Loss
-            'TP_DIFF': tk.DoubleVar(value=3.0),  # ⭐ BASE para TP en ETHUSD (se adapta por volumen)
-            'SL_DIFF': tk.DoubleVar(value=15.0),  # ⭐ BASE para SL en ETHUSD (se adapta por volumen)
+            'TP_DIFF': tk.DoubleVar(value=1.0),  # ⭐ BASE para TP en GOLD
+            'SL_DIFF': tk.DoubleVar(value=30.0),  # ⭐ BASE para SL en GOLD
             'TREND_TP_MULTIPLIER': tk.DoubleVar(value=1.0),
             'FORCE_STOP_LOSS': tk.DoubleVar(value=100.0),
             'USE_SL': tk.BooleanVar(value=True),  # ⭐ NUEVO: Opción de usar SL
+            'USE_MULTIPLE_PARTS': tk.BooleanVar(value=False),  # ⭐ NUEVO: Si activado, abre 1 en GOLD + 1 en SILVER simultáneamente
             
             # Configuración de indicadores
             'ATR_PERIOD': tk.IntVar(value=14),
@@ -1168,9 +1176,9 @@ class MT5AdaptiveTradingBot:
             'TIEMPO_MAX_ROJO': tk.IntVar(value=300),
 
             # ⭐️ Take Profit y Stop Loss Global configurables
-            'GLOBAL_TP': tk.DoubleVar(value=3.0),  # Ganancia total para cerrar todo en ETHUSD
-            'GLOBAL_SL': tk.DoubleVar(value=15),  # ⭐ Stop Loss Global para ETHUSD: $15 por defecto
-            'MICROTREND_THRESHOLD': tk.DoubleVar(value=24.0),  # ⭐ OPTIMIZADO para ETHUSD: 24 pips (GOLD:18, SOL:35)
+            'GLOBAL_TP': tk.DoubleVar(value=1.0),  # Ganancia total para cerrar todo en GOLD
+            'GLOBAL_SL': tk.DoubleVar(value=30),  # ⭐ Stop Loss Global para GOLD: $30 por defecto
+            'MICROTREND_THRESHOLD': tk.DoubleVar(value=18.0),  # ⭐ OPTIMIZADO para GOLD: 18 pips (SILVER: 15)
             'MIN_PROB_ENTRADA': tk.DoubleVar(value=73.0),
             'PAUSA_POST_WIN': tk.IntVar(value=0),  # <-- cooldown tras ganar una operación (segundos)
             'CONFIDENCE_THRESHOLD': tk.DoubleVar(value=70.0),  # umbral general árbitro
@@ -1181,13 +1189,13 @@ class MT5AdaptiveTradingBot:
             'SPECIALIST_DIRECTION_PENALTY': tk.DoubleVar(value=12.0),
             'SPECIALIST_EXTREME_MOVE_PCT': tk.DoubleVar(value=0.20),
             'SPECIALIST_MIN_SCORE_GAP': tk.DoubleVar(value=4.0),
-            'SPECIALIST_SESSION_WINDOW_TRADES': tk.IntVar(value=40),
+            # 'SPECIALIST_SESSION_WINDOW_TRADES' - REMOVIDO: No se usan datos de trades anteriores
             'SPECIALIST_SESSION_WEIGHT': tk.DoubleVar(value=0.75),
              'ANALYZE_DURING_PAUSE': tk.BooleanVar(value=True),  # permitir análisis mientras está en pausa
              'AUTO_OPEN_ON_SIGNAL': tk.BooleanVar(value=False),  # abrir automáticamente si señal fuerte durante pausa
             # Forzar apertura tras N minutos si no hay señal
             'ENABLE_FORCED_OPEN': tk.BooleanVar(value=True),
-            'FORCED_OPEN_MINUTES': tk.DoubleVar(value=0.3),  # ⭐ CALIBRADO: 0.3 = 30s (IDÉNTICA a TRADE_INTERVAL) - CON VALIDACIÓN microtrend
+            'FORCED_OPEN_MINUTES': tk.DoubleVar(value=1),  # ⭐ CALIBRADO: 1 = 60s/1min (TRADE_INTERVAL standard) - CON VALIDACIÓN microtrend
             'MAX_STACK_PER_DIRECTION': tk.IntVar(value=2),  # Límite de apilado por dirección (BUY/SELL)
             
             # ⭐ NUEVO: Control de direcciones habilitadas
@@ -1208,6 +1216,22 @@ class MT5AdaptiveTradingBot:
             self.market_snapshots = []
         # Riesgo por trade (fracción del equity). Usado para sizing dinámico.
         self.config['RISK_PCT'] = tk.DoubleVar(value=0.005)  # 0.5% por defecto
+        
+        # ⭐ CONFIG ÓPTIMA PARA GOLD (Scalping limpio y constante)
+        self.config['GOLD_THRESHOLD'] = tk.DoubleVar(value=18)  # ⭐ EN PIPS (como MICROTREND_THRESHOLD): 18 para ORO, se convierte a 0.18 decimal
+        self.config['GOLD_MICROTREND_CANDLES'] = tk.IntVar(value=4)  # Rango 3-5 (4 ideal)
+        self.config['GOLD_CANDLE_BODY_PCT'] = tk.IntVar(value=60)  # Mínimo 60% de cuerpo
+        self.config['GOLD_VIDYA_CMO'] = tk.IntVar(value=9)  # CMO para VIDYA
+        self.config['GOLD_VIDYA_EMA'] = tk.IntVar(value=12)  # EMA para VIDYA
+        self.config['GOLD_IMPULSE_FILTER'] = tk.DoubleVar(value=1.5)  # Movimiento mínimo en puntos
+        
+        # ⭐ CONFIG ÓPTIMA PARA SILVER (Scalping M1/M5 más rápido)
+        self.config['SILVER_THRESHOLD'] = tk.DoubleVar(value=15)  # ⭐ EN PIPS (como MICROTREND_THRESHOLD): 15 para PLATA, se convierte a 0.15 decimal
+        self.config['SILVER_MICROTREND_CANDLES'] = tk.IntVar(value=4)  # Rango 3-5 (igual que ORO)
+        self.config['SILVER_CANDLE_BODY_PCT'] = tk.IntVar(value=60)  # Mínimo 60% de cuerpo (MÁS CRÍTICO en plata)
+        self.config['SILVER_VIDYA_CMO'] = tk.IntVar(value=9)  # CMO para VIDYA (igual)
+        self.config['SILVER_VIDYA_EMA'] = tk.IntVar(value=12)  # EMA para VIDYA (igual)
+        self.config['SILVER_IMPULSE_FILTER'] = tk.DoubleVar(value=1.5)  # Movimiento mínimo en puntos (igual)
         
         # ⭐ AHORA inicializar MultiTimeframeAnalyzer (después de que self.config existe)
         try:
@@ -1306,7 +1330,7 @@ class MT5AdaptiveTradingBot:
         self.recent_losses = []  # Últimas pérdidas para penalización de volumen
         self.last_signal_confidence = 50  # Confianza de última decisión
         self.base_volume = float(self.config.get('VOL', tk.DoubleVar(value=0.1)).get())  # ⭐ ETHUSD: 0.1 mínimo
-        self.last_trade_metadata = None  # NUEVO: Metadata del trade para feedback loop
+        # Metadata de trades removida: solo análisis de mercado actual
         
         # Variables de análisis de mercado
         self.market_state = "ANALIZANDO"
@@ -1559,7 +1583,7 @@ class MT5AdaptiveTradingBot:
         Returns: (success_bool, snapshot_count, metadata)
         """
         try:
-            symbol = self.config.get('SYMBOL', tk.StringVar(value='ETHUSD')).get() if hasattr(self, 'config') else 'ETHUSD'
+            symbol = self.config.get('SYMBOL', tk.StringVar(value='GOLD')).get() if hasattr(self, 'config') else 'GOLD'
             
             # Traer últimos 240 snapshots (4 horas de M1, más que suficiente para últimas barras)
             latest_snaps = self._get_fresh_market_data(symbol, bars=240) or []
@@ -1657,7 +1681,7 @@ class MT5AdaptiveTradingBot:
                 base = self.market_snapshots[-1]
                 base_close = float(base.get('close', 1900.0))
             else:
-                base_close = 2500.0  # Default para ETHUSD
+                base_close = 2000.0  # Default para GOLD
             
             synthetics = []
             import random
@@ -1743,7 +1767,7 @@ class MT5AdaptiveTradingBot:
             logger.info(f"[reload] ⭐ CICLO DE 4M DETECTADO: {time_since_init:.0f}s desde último reload exitoso")
             logger.info(f"[reload] Iniciando RECARGA FRESCA...")
             try:
-                symbol = self.config.get('SYMBOL', tk.StringVar(value='ETHUSD')).get() if hasattr(self, 'config') else 'ETHUSD'
+                symbol = self.config.get('SYMBOL', tk.StringVar(value='GOLD')).get() if hasattr(self, 'config') else 'GOLD'
                 filled, fresh_snaps = prefill_market_data_and_return(symbol, minutes=500)
                 logger.info(f"[reload] ✓ RECARGA FRESCA: {filled} snapshots frescos obtenidos")
                 if len(fresh_snaps) > 0:
@@ -1962,7 +1986,7 @@ class MT5AdaptiveTradingBot:
         try:
             from trade_logger import write_market_snapshots
             if len(snaps) > 0:  # ⭐ SOLO GUARDAR SI TENEMOS DATOS
-                symbol = self.config.get('SYMBOL', tk.StringVar(value='ETHUSD')).get() if hasattr(self, 'config') else 'ETHUSD'
+                symbol = self.config.get('SYMBOL', tk.StringVar(value='GOLD')).get() if hasattr(self, 'config') else 'GOLD'
                 # ⭐ NUEVO: Pasar símbolo y max_snapshots para mejor metadata
                 write_market_snapshots(snaps, symbol=symbol, max_snapshots=1440)  # 1440 = 24h M1
                 if mt5_success:
@@ -2100,54 +2124,19 @@ class MT5AdaptiveTradingBot:
             return (tp_base, sl_base)
 
     def _build_specialist_session_context(self):
-        """Construye contexto de la sesión actual para ponderar decisiones en tiempo real."""
+        """Construye contexto basado SOLO en datos de mercado actual, sin histórico de trades."""
         try:
-            try:
-                window = int(self.config.get('SPECIALIST_SESSION_WINDOW_TRADES', tk.IntVar(value=40)).get())
-            except Exception:
-                window = 40
-            window = max(10, min(200, window))
-
-            recent = list(self.directional_trade_history)[-window:]
-            if not recent and hasattr(self, 'rapid_ops_history'):
-                for e in list(self.rapid_ops_history)[-window:]:
-                    if isinstance(e, dict) and e.get('type') in ('BUY', 'SELL'):
-                        recent.append({'direction': e.get('type'), 'profit': float(e.get('profit', 0.0))})
-
-            buy_trades = [x for x in recent if x.get('direction') == 'BUY']
-            sell_trades = [x for x in recent if x.get('direction') == 'SELL']
-
-            buy_wins = sum(1 for x in buy_trades if float(x.get('profit', 0.0)) > 0)
-            sell_wins = sum(1 for x in sell_trades if float(x.get('profit', 0.0)) > 0)
-            buy_losses = sum(1 for x in buy_trades if float(x.get('profit', 0.0)) < 0)
-            sell_losses = sum(1 for x in sell_trades if float(x.get('profit', 0.0)) < 0)
-
-            buy_profit = float(sum(float(x.get('profit', 0.0)) for x in buy_trades))
-            sell_profit = float(sum(float(x.get('profit', 0.0)) for x in sell_trades))
-
-            buy_win_rate = (buy_wins / max(1, len(buy_trades))) * 100.0
-            sell_win_rate = (sell_wins / max(1, len(sell_trades))) * 100.0
-
-            buy_streak = self._get_direction_loss_streak('BUY') if hasattr(self, '_get_direction_loss_streak') else 0
-            sell_streak = self._get_direction_loss_streak('SELL') if hasattr(self, '_get_direction_loss_streak') else 0
-
-            try:
-                base_weight = float(self.config.get('SPECIALIST_SESSION_WEIGHT', tk.DoubleVar(value=0.75)).get())
-            except Exception:
-                base_weight = 0.75
-            sample_boost = min(0.15, len(recent) * 0.003)
-            session_weight = max(0.35, min(0.90, base_weight + sample_boost))
-
+            # Contexto neutral basado solo en mercado actual, sin datos de trades anteriores
             return {
-                'samples': len(recent),
-                'buy_win_rate': buy_win_rate,
-                'sell_win_rate': sell_win_rate,
-                'buy_profit': buy_profit,
-                'sell_profit': sell_profit,
-                'buy_loss_streak': int(buy_streak),
-                'sell_loss_streak': int(sell_streak),
-                'session_weight': float(session_weight),
-                'window': int(window),
+                'samples': 0,
+                'buy_win_rate': 50.0,
+                'sell_win_rate': 50.0,
+                'buy_profit': 0.0,
+                'sell_profit': 0.0,
+                'buy_loss_streak': 0,
+                'sell_loss_streak': 0,
+                'session_weight': 0.50,
+                'window': 0,
             }
         except Exception:
             return {
@@ -2159,7 +2148,7 @@ class MT5AdaptiveTradingBot:
                 'buy_loss_streak': 0,
                 'sell_loss_streak': 0,
                 'session_weight': 0.50,
-                'window': 40,
+                'window': 0,
             }
 
     def _refresh_specialists_session_context(self):
@@ -2180,21 +2169,8 @@ class MT5AdaptiveTradingBot:
             pass
 
     def _get_direction_loss_streak(self, direction):
-        """Cuenta pérdidas consecutivas recientes para BUY/SELL en historial real."""
-        try:
-            if direction not in ('BUY', 'SELL'):
-                return 0
-            streak = 0
-            for item in reversed(list(self.directional_trade_history)):
-                if item.get('direction') != direction:
-                    continue
-                if float(item.get('profit', 0.0)) < 0:
-                    streak += 1
-                else:
-                    break
-            return streak
-        except Exception:
-            return 0
+        """DESHABILITADO: No se usa histórico de trades. Solo análisis de mercado actual."""
+        return 0
 
     def _detect_extreme_micro_move(self, snapshots):
         """Detecta micro-movimiento extremo reciente usando últimos cierres M1."""
@@ -2336,14 +2312,22 @@ class MT5AdaptiveTradingBot:
         """Análisis RÁPIDO para reaperturas forzadas - NO usa lock para evitar bloqueos.
         ⭐ IMPORTANTE: EN MODO FORZADO SE IGNORA ARBITRADOR - Se abre con mejor score
         Retorna: (mejor_dirección, score_buy, score_sell, trend_analysis)"""
-        # --- FILTRO DE MICROTENDENCIA/MOMENTUM - USA THRESHOLD DE CONFIGURACIÓN EN TIEMPO REAL ---
+        # --- FILTRO DE MICROTENDENCIA/MOMENTUM - USA THRESHOLD DEL PAR EN TIEMPO REAL ---
         try:
-            microtrend = self._microtrend_direction(symbol, bars=10, threshold=None)  # ⭐ USA MICROTREND_THRESHOLD DE CONFIG (PARAMETRIZABLE EN TIEMPO REAL)
+            microtrend = self._microtrend_direction(symbol, bars=10, threshold=None)  # ⭐ USA GOLD_THRESHOLD o SILVER_THRESHOLD DE CONFIG (PARAMETRIZABLE EN TIEMPO REAL)
         except Exception as e:
             self.add_log(f"[ERROR] microtrend_direction fallo: {e}", 'error')
             microtrend = 'FLAT'
-        threshold_pips = self._safe_get('MICROTREND_THRESHOLD', 1.0)
-        self.add_log(f"[MICROTREND/FORCED] Microtendencia detectada: {microtrend} (threshold={threshold_pips} pips configurable en tiempo real)", 'info')
+        
+        # Obtener threshold correcto del par
+        if symbol.upper() == 'GOLD' or symbol == 'XAUUSD':
+            threshold_pips = self._safe_get('GOLD_THRESHOLD', 18.0)
+        elif symbol.upper() == 'SILVER' or symbol == 'XAGUSD':
+            threshold_pips = self._safe_get('SILVER_THRESHOLD', 15.0)
+        else:
+            threshold_pips = self._safe_get('MICROTREND_THRESHOLD', 18.0)
+        
+        self.add_log(f"[MICROTREND/FORCED] Microtendencia detectada: {microtrend} (threshold={threshold_pips} pips por par, configurable en tiempo real)", 'info')
         try:
             # ⭐ CRÍTICO: Usar datos FRESCOS de MT5, no JSON estático
             snaps = self.get_fresh_market_data(symbol, bars=45) or []
@@ -2463,19 +2447,8 @@ class MT5AdaptiveTradingBot:
                     except Exception:
                         pass
 
-                    # Metadata para feedback loop también en flujo forzado.
-                    try:
-                        self.last_trade_metadata = {
-                            'analysis_source': 'FORCED_SCHEDULER',
-                            'buy_score': float(buy_score),
-                            'sell_score': float(sell_score),
-                            'confidence': float(max(buy_conf, sell_conf)),
-                            'direction': direction,
-                            'motor_votes': {'buy_specialist': 'BUY', 'sell_specialist': 'SELL'},
-                            'entry_rsi': float(getattr(self, 'rsi_value', 50) or 50),
-                            'entry_volatility': float(getattr(self, 'current_market_volatility', 1.0) or 1.0),
-                            'timestamp': time.time()
-                        }
+                    # Metadata para feedback loop - REMOVIDA: solo análisis de mercado
+                    # self.last_trade_metadata = {...} - DESHABILITADO
                     except Exception:
                         pass
                     
@@ -3379,23 +3352,14 @@ class MT5AdaptiveTradingBot:
                     'GLOBAL_SL': 30.0,
                     'MIN_RANGE': 1.0,
                 },
-                'ETHUSD': {
-                    'VOL': 0.1,
-                    'TP_DIFF': 3.0,
-                    'SL_DIFF': 15.0,
-                    'MICROTREND_THRESHOLD': 24.0,
-                    'GLOBAL_TP': 3.0,
-                    'GLOBAL_SL': 15.0,
-                    'MIN_RANGE': 2.0,
-                },
-                'SOLUSD': {
-                    'VOL': 0.1,
-                    'TP_DIFF': 3.0,
-                    'SL_DIFF': 15.0,
-                    'MICROTREND_THRESHOLD': 35.0,
-                    'GLOBAL_TP': 3.0,
-                    'GLOBAL_SL': 15.0,
-                    'MIN_RANGE': 2.0,
+                'SILVER': {
+                    'VOL': 0.01,
+                    'TP_DIFF': 0.5,
+                    'SL_DIFF': 20.0,
+                    'MICROTREND_THRESHOLD': 15.0,
+                    'GLOBAL_TP': 0.5,
+                    'GLOBAL_SL': 20.0,
+                    'MIN_RANGE': 0.5,
                 },
             }
             
@@ -3446,12 +3410,38 @@ class MT5AdaptiveTradingBot:
             ("Max % Consumo Recuperación (%):", 'MAX_RECOVERY_CONSUMPTION_PCT'),
             ("Margen de Ganancia Objetivo (%):", 'MARGEN_GANANCIA'),
             ("Objetivo Neto ($):", 'OBJETIVO_NETO'),
+            
+            # ⭐ CONFIG ÓPTIMA PARA GOLD (Scalping limpio y constante)
+            ("🟡 ⚙️ CONFIG ÓPTIMA – ORO (XAUUSD)", None),  # Separador visual
+            ("Threshold (1.7-1.9):", 'GOLD_THRESHOLD'),
+            ("Microtendencia (velas, 3-5):", 'GOLD_MICROTREND_CANDLES'),
+            ("Cuerpo Vela Mínimo (%):", 'GOLD_CANDLE_BODY_PCT'),
+            ("VIDYA CMO:", 'GOLD_VIDYA_CMO'),
+            ("VIDYA EMA:", 'GOLD_VIDYA_EMA'),
+            ("Filtro Impulso (puntos):", 'GOLD_IMPULSE_FILTER'),
+            
+            # ⭐ CONFIG ÓPTIMA PARA SILVER (Scalping M1/M5)
+            ("🔥 ⚙️ CONFIG ÓPTIMA – PLATA (XAGUSD)", None),  # Separador visual
+            ("Threshold (1.5-1.7):", 'SILVER_THRESHOLD'),
+            ("Microtendencia (velas, 3-5):", 'SILVER_MICROTREND_CANDLES'),
+            ("Cuerpo Vela Mínimo (%):", 'SILVER_CANDLE_BODY_PCT'),
+            ("VIDYA CMO:", 'SILVER_VIDYA_CMO'),
+            ("VIDYA EMA:", 'SILVER_VIDYA_EMA'),
+            ("Filtro Impulso (puntos):", 'SILVER_IMPULSE_FILTER'),
         ]
         
 
         self.config_entries = {}
 
         for label, key in configs:
+            # ⭐ NUEVO: Separador visual (si key es None)
+            if key is None:
+                sep_frame = tk.Frame(scrollable_frame, bg='#475569', height=2)
+                sep_frame.pack(fill='x', pady=10, padx=5)
+                sep_label = tk.Label(sep_frame, text=label, bg='#475569', fg='#fbbf24', font=('Arial', 10, 'bold'), anchor='w')
+                sep_label.pack(fill='x', padx=5, pady=5)
+                continue
+            
             row_frame = tk.Frame(scrollable_frame, bg='#334155')
             row_frame.pack(fill='x', pady=3)
             lbl = tk.Label(row_frame, text=label, bg='#334155', fg='#cbd5e1', font=('Arial', 9), width=22, anchor='w')
@@ -3460,7 +3450,7 @@ class MT5AdaptiveTradingBot:
             # ⭐ NUEVO: Combobox para SYMBOL con auto-configuración
             if key == 'SYMBOL':
                 symbol_combo = ttk.Combobox(row_frame, textvariable=self.config[key], 
-                                           values=['GOLD', 'ETHUSD', 'SOLUSD'],
+                                           values=['GOLD', 'SILVER'],
                                            state='readonly', width=25,
                                            font=('Arial', 9))
                 symbol_combo.pack(side='right', fill='x', expand=True)
@@ -3486,23 +3476,7 @@ class MT5AdaptiveTradingBot:
         row_sl.pack(fill='x', pady=3)
         tk.Label(row_sl, text="Stop Loss Global ($):", bg='#2d3e50', fg='#ef4444', font=('Arial', 9), width=22, anchor='w').pack(side='left')
         tk.Entry(row_sl, textvariable=self.config['GLOBAL_SL'], bg='#475569', fg='white', relief='flat', font=('Arial', 9), insertbackground='white').pack(side='right', fill='x', expand=True)
-
-        row_threshold = tk.Frame(global_frame, bg='#2d3e50')
-        row_threshold.pack(fill='x', pady=3)
-        tk.Label(row_threshold, text="Threshold Microtendencia (pips):", bg='#2d3e50', fg='#a78bfa', font=('Arial', 9), width=22, anchor='w').pack(side='left')
         
-        # ⭐ ENTRY CON VALIDACIÓN para threshold (solo números)
-        vcmd_threshold = (self.root.register(self._validate_float), '%S', '%P')
-        threshold_entry = tk.Entry(row_threshold, textvariable=self.config['MICROTREND_THRESHOLD'], 
-                                  validate='key', validatecommand=vcmd_threshold,
-                                  bg='#475569', fg='white', relief='flat', font=('Arial', 9), 
-                                  insertbackground='white')
-        threshold_entry.pack(side='right', fill='x', expand=True)
-        # Rastrear cambios en tiempo real
-        self.config['MICROTREND_THRESHOLD'].trace('w', self._on_threshold_change)
-        
-        threshold_help = tk.Label(row_threshold, text='1 pip = 0.0001 | Ej: 0.5, 1.0, 1.5', bg='#2d3e50', fg='#cbd5e1', font=('Arial', 8))
-        threshold_help.pack(side='right', padx=(5, 0))
         # --- FIN sección TP/SL Global ---
 
         # --- NUEVO: Sección Apertura Forzada ---
@@ -3554,6 +3528,12 @@ class MT5AdaptiveTradingBot:
                       variable=self.config['USE_SL'],
                       bg='#2d3e50', fg='#34d399', selectcolor='#1e293b',
                       activebackground='#2d3e50', activeforeground='#34d399',
+                      font=('Arial', 10, 'bold')).pack(side='left', padx=5)
+        
+        tk.Checkbutton(sl_frame, text="⚡ Usar múltiples partes (GOLD + SILVER simultáneamente)", 
+                      variable=self.config['USE_MULTIPLE_PARTS'],
+                      bg='#2d3e50', fg='#60a5fa', selectcolor='#1e293b',
+                      activebackground='#2d3e50', activeforeground='#60a5fa',
                       font=('Arial', 10, 'bold')).pack(side='left', padx=5)
         # --- FIN bloque calibración ---
 
@@ -4738,152 +4718,12 @@ class MT5AdaptiveTradingBot:
 
 
     def get_last_minute_counts(self):
-        """Cuenta BUY/SELL en el historial de rápidas dentro de la última 60s."""
-        try:
-            now = datetime.now()
-            cutoff = now - timedelta(seconds=60)
-            buy = 0
-            sell = 0
-            for item in reversed(self.rapid_ops_history):
-                t = item.get('time', now)
-                if t < cutoff:
-                    break
-                if item.get('type') == 'BUY':
-                    buy += 1
-                else:
-                    sell += 1
-            return buy, sell, (buy + sell)
-        except Exception:
-            return 0, 0, 0
+        """DESHABILITADO: No se usa histórico de operaciones rápidas. Solo análisis de mercado actual."""
+        return 0, 0, 0
 
     def decide_rapid_direction(self):
-        """Decide la mejor dirección para la próxima operación rápida analizando
-        las últimas `RAPID_OPS_ANALYZE_WINDOW` segundos de datos tanto de fantasmas
-        como de operaciones reales. Devuelve 'BUY', 'SELL' o 'HOLD'.
-        """
-        try:
-            now = time.time()
-            window = int(self._safe_get('RAPID_OPS_ANALYZE_WINDOW', 5))
-
-            # Recoger datos de fantasmas (usamos close_time)
-            ghost_recent = []
-            try:
-                if hasattr(self, 'ghost_ops_history') and self.ghost_ops_history:
-                    # proteger lectura con lock si existe
-                    if getattr(self, 'ghost_ops_lock', None):
-                        with self.ghost_ops_lock:
-                            ghost_recent = [e for e in list(self.ghost_ops_history) if e.get('close_time', 0) >= now - window]
-                    else:
-                        ghost_recent = [e for e in list(self.ghost_ops_history) if e.get('close_time', 0) >= now - window]
-            except Exception:
-                ghost_recent = []
-
-            # Recoger datos de operaciones reales (rapid_ops_history)
-            rapid_recent = []
-            try:
-                if hasattr(self, 'rapid_ops_history') and self.rapid_ops_history:
-                    if getattr(self, 'rapid_ops_lock', None):
-                        with self.rapid_ops_lock:
-                            rapid_recent = [e for e in list(self.rapid_ops_history) if getattr(e.get('time'), 'timestamp', lambda: 0)() >= now - window]
-                    else:
-                        rapid_recent = [e for e in list(self.rapid_ops_history) if getattr(e.get('time'), 'timestamp', lambda: 0)() >= now - window]
-            except Exception:
-                rapid_recent = []
-
-            # Calcular winrates y profit sums
-            def calc_metrics(arr, is_ghost=False):
-                buy_total = 0
-                buy_wins = 0
-                buy_profit = 0.0
-                sell_total = 0
-                sell_wins = 0
-                sell_profit = 0.0
-                for e in arr:
-                    t = e.get('type', '').upper()
-                    if is_ghost:
-                        res = e.get('result')
-                        prof = float(e.get('profit', 0.0))
-                        if t == 'BUY':
-                            buy_total += 1
-                            if res == 'win':
-                                buy_wins += 1
-                            buy_profit += prof
-                        elif t == 'SELL':
-                            sell_total += 1
-                            if res == 'win':
-                                sell_wins += 1
-                            sell_profit += prof
-                    else:
-                        prof = float(e.get('profit', 0.0))
-                        if t == 'BUY':
-                            buy_total += 1
-                            if prof > 0:
-                                buy_wins += 1
-                            buy_profit += prof
-                        elif t == 'SELL':
-                            sell_total += 1
-                            if prof > 0:
-                                sell_wins += 1
-                            sell_profit += prof
-                return {
-                    'buy_total': buy_total, 'buy_wins': buy_wins, 'buy_profit': buy_profit,
-                    'sell_total': sell_total, 'sell_wins': sell_wins, 'sell_profit': sell_profit
-                }
-
-            ghost_metrics = calc_metrics(ghost_recent, is_ghost=True)
-            rapid_metrics = calc_metrics(rapid_recent, is_ghost=False)
-
-            # Win rates
-            buy_wins = ghost_metrics['buy_wins'] + rapid_metrics['buy_wins']
-            buy_total = ghost_metrics['buy_total'] + rapid_metrics['buy_total']
-            sell_wins = ghost_metrics['sell_wins'] + rapid_metrics['sell_wins']
-            sell_total = ghost_metrics['sell_total'] + rapid_metrics['sell_total']
-
-            buy_rate_real = (rapid_metrics['buy_wins'] / rapid_metrics['buy_total']) if rapid_metrics['buy_total'] > 0 else None
-            sell_rate_real = (rapid_metrics['sell_wins'] / rapid_metrics['sell_total']) if rapid_metrics['sell_total'] > 0 else None
-            buy_rate_ghost = (ghost_metrics['buy_wins'] / ghost_metrics['buy_total']) if ghost_metrics['buy_total'] > 0 else None
-            sell_rate_ghost = (ghost_metrics['sell_wins'] / ghost_metrics['sell_total']) if ghost_metrics['sell_total'] > 0 else None
-
-            # Mezclar con pesos (dar más peso a datos reales)
-            w_real = 0.7
-            w_ghost = 0.3
-            # Fallbacks: si no hay datos reales, usar solo ghost; si no hay ghost, usar reales
-            def combine(br, bg):
-                if br is None and bg is None:
-                    return 0.5
-                if br is None:
-                    return bg
-                if bg is None:
-                    return br
-                return w_real * br + w_ghost * bg
-
-            buy_comb = combine(buy_rate_real, buy_rate_ghost)
-            sell_comb = combine(sell_rate_real, sell_rate_ghost)
-
-            # Considerar también profit medio como desempate
-            buy_profit = ghost_metrics['buy_profit'] + rapid_metrics['buy_profit']
-            sell_profit = ghost_metrics['sell_profit'] + rapid_metrics['sell_profit']
-
-            # Decisión basada en la diferencia y en profit
-            diff = buy_comb - sell_comb
-            profit_diff = buy_profit - sell_profit
-
-            # Umbral dinámico: si hay al menos 2 muestras en total usar umbral 0.12, sino mantener 50/50
-            samples = buy_total + sell_total
-            threshold = 0.12 if samples >= 2 else 0.30
-
-            if diff > threshold or (abs(diff) < threshold and profit_diff > 0.01 and buy_total+sell_total>0):
-                return 'BUY'
-            elif diff < -threshold or (abs(diff) < threshold and profit_diff < -0.01 and buy_total+sell_total>0):
-                return 'SELL'
-            else:
-                return 'HOLD'
-        except Exception as e:
-            try:
-                self.add_log(f"Error decide_rapid_direction: {e}", 'error')
-            except Exception:
-                pass
-            return 'HOLD'
+        """DESHABILITADO: No se usa histórico de operaciones rápidas. Solo análisis de mercado actual."""
+        return 'HOLD'
 
     def monitor_rapid_operations(self):
         """Monitorea y abre operaciones rápidas cada X segundos (sin análisis)"""
@@ -4956,44 +4796,12 @@ class MT5AdaptiveTradingBot:
                                 ghost_dir = self.get_ghost_recommendation()
                         except Exception:
                             ghost_dir = self.get_ghost_recommendation()
-                        # Si está activado el flag, invertir la dirección propuesta según distintas reglas
-                        try:
-                            # 1) Si está activada la opción "Open opposite on win", y la otra dirección
-                            #    ha mostrado mayor profit recientemente y además hay posiciones abiertas
-                            #    de la contraria, entonces invertir la dirección propuesta.
-                            if ghost_dir in ('BUY', 'SELL') and 'RAPID_OPS_OPEN_OPPOSITE_ON_WIN' in self.config and self.config['RAPID_OPS_OPEN_OPPOSITE_ON_WIN'].get():
-                                try:
-                                    now_check = time.time()
-                                    win_window = int(self.config.get('RAPID_OPS_ANALYZE_WINDOW', tk.IntVar(value=5)).get())
-                                    recent = []
-                                    if hasattr(self, 'rapid_ops_history') and self.rapid_ops_history:
-                                        if getattr(self, 'rapid_ops_lock', None):
-                                            with self.rapid_ops_lock:
-                                                recent = [e for e in list(self.rapid_ops_history) if getattr(e.get('time'), 'timestamp', lambda: 0)() >= now_check - win_window]
-                                        else:
-                                            recent = [e for e in list(self.rapid_ops_history) if getattr(e.get('time'), 'timestamp', lambda: 0)() >= now_check - win_window]
-
-                                    buy_profit_recent = sum(float(e.get('profit', 0.0)) for e in recent if e.get('type') == 'BUY')
-                                    sell_profit_recent = sum(float(e.get('profit', 0.0)) for e in recent if e.get('type') == 'SELL')
-
-                                    buy_open = sum(1 for op in self.rapid_ops_active.values() if op['type'] == 'BUY')
-                                    sell_open = sum(1 for op in self.rapid_ops_active.values() if op['type'] == 'SELL')
-
-                                    # Margen pequeño para evitar toggles
-                                    profit_margin = 0.01
-                                    if buy_profit_recent > sell_profit_recent + profit_margin and ghost_dir == 'BUY' and sell_open > 0:
-                                        orig_dir = ghost_dir
-                                        ghost_dir = 'SELL'
-                                        self.add_log(f"↺ OpenOppositeOnWin: invertida {orig_dir} → {ghost_dir} (buy_profit {buy_profit_recent:.2f} > sell_profit {sell_profit_recent:.2f})", 'info')
-                                    elif sell_profit_recent > buy_profit_recent + profit_margin and ghost_dir == 'SELL' and buy_open > 0:
-                                        orig_dir = ghost_dir
-                                        ghost_dir = 'BUY'
-                                        self.add_log(f"↺ OpenOppositeOnWin: invertida {orig_dir} → {ghost_dir} (sell_profit {sell_profit_recent:.2f} > buy_profit {buy_profit_recent:.2f})", 'info')
-                                except Exception:
-                                    pass
-
-                            # 1.5) Protección por racha: si la dirección propuesta viene perdiendo seguido,
-                            # forzar cambio para evitar seguir apilando pérdidas del mismo lado.
+                        # Análisis de histórico de operaciones rápidas removido
+                        # if ghost_dir in ('BUY', 'SELL') and 'RAPID_OPS_OPEN_OPPOSITE_ON_WIN' in self.config...:
+                        #     ... - DESHABILITADO
+                        
+                        # Protección por racha: si la dirección propuesta viene perdiendo seguido,
+                        # forzar cambio para evitar seguir apilando pérdidas del mismo lado.
                             if ghost_dir in ('BUY', 'SELL'):
                                 try:
                                     max_streak = int(self.config.get('RAPID_OPS_MAX_DIRECTION_LOSS_STREAK', tk.IntVar(value=3)).get())
@@ -5420,43 +5228,30 @@ class MT5AdaptiveTradingBot:
                             pass
                         
                         if op_type:
-                            # Registrar en historial de rápidas
+                            # Histórico de operaciones rápidas removido: solo análisis de mercado
+                            # self.rapid_ops_history.append(entry) - DESHABILITADO
+                            
+                            # Registrar cierre en log JSON
                             try:
-                                entry = {'type': op_type, 'profit': float(pos.profit), 'time': datetime.now()}
-                                try:
-                                    if getattr(self, 'rapid_ops_lock', None):
-                                        with self.rapid_ops_lock:
-                                            self.rapid_ops_history.append(entry)
-                                    else:
-                                        self.rapid_ops_history.append(entry)
-                                except Exception:
-                                    try:
-                                        self.rapid_ops_history.append(entry)
-                                    except Exception:
-                                        pass
-                                # Registrar cierre en log JSON
-                                try:
-                                    log_trade({
-                                        'symbol': symbol,
-                                        'ticket': int(pos.ticket),
-                                        'type': op_type,
-                                        'profit': float(pos.profit),
-                                        'mode': 'rapid',
-                                        'timestamp': datetime.now().isoformat()
-                                    })
-                                except Exception:
-                                    pass
+                                log_trade({
+                                    'symbol': symbol,
+                                    'ticket': int(pos.ticket),
+                                    'type': op_type,
+                                    'profit': float(pos.profit),
+                                    'mode': 'rapid',
+                                    'timestamp': datetime.now().isoformat()
+                                })
+                            except Exception:
+                                pass
 
-                                # Aprendizaje online: recalcular fracción objetivo y actualizar en vivo
-                                try:
-                                    log_threshold = float(self.config.get('RAPID_OPS_LOG_THRESHOLD', tk.DoubleVar(value=0.01)).get()) if 'RAPID_OPS_LOG_THRESHOLD' in self.config else 0.01
-                                    new_frac = self._compute_rapid_ops_distribution()
-                                    old_frac = getattr(self, 'rapid_target_buy_frac', None)
-                                    self.rapid_target_buy_frac = new_frac
-                                    if old_frac is None or abs(new_frac - old_frac) >= log_threshold:
-                                        self.add_log(f"[IA] IA Rápidas (online): nueva Frac BUY {new_frac:.2f} (prev {old_frac})", 'info')
-                                except Exception:
-                                    pass
+                            # Aprendizaje online: recalcular fracción objetivo y actualizar en vivo
+                            try:
+                                log_threshold = float(self.config.get('RAPID_OPS_LOG_THRESHOLD', tk.DoubleVar(value=0.01)).get()) if 'RAPID_OPS_LOG_THRESHOLD' in self.config else 0.01
+                                new_frac = self._compute_rapid_ops_distribution()
+                                old_frac = getattr(self, 'rapid_target_buy_frac', None)
+                                self.rapid_target_buy_frac = new_frac
+                                if old_frac is None or abs(new_frac - old_frac) >= log_threshold:
+                                    self.add_log(f"[IA] IA Rápidas (online): nueva Frac BUY {new_frac:.2f} (prev {old_frac})", 'info')
                             except Exception:
                                 pass
 
@@ -5473,23 +5268,9 @@ class MT5AdaptiveTradingBot:
                             self.rapid_adapt_frac = max(0.05, min(0.95, self.rapid_adapt_frac))
                             self.rapid_target_buy_frac = self.rapid_adapt_frac
                             self.add_log(f"🚀 Aprendizaje IA (Rápidas): nueva preferencia BUY={self.rapid_adapt_frac:.2f}", 'info')
-                            # --- ADAPTACIÓN: Si hay muchas pérdidas consecutivas en la dirección preferida, pasar a 50/50 ---
-                            max_perdidas = 3  # Puedes ajustar este umbral
-                            perdidas_buy = 0
-                            perdidas_sell = 0
-                            for e in list(self.rapid_ops_history)[-max_perdidas*2:]:
-                                if e['profit'] < 0:
-                                    if e['type'] == 'BUY':
-                                        perdidas_buy += 1
-                                    elif e['type'] == 'SELL':
-                                        perdidas_sell += 1
-                            # Si la preferencia es muy fuerte y hay muchas pérdidas, pasar a 50/50 (exploración)
-                            if self.rapid_adapt_frac > 0.85 and perdidas_buy >= max_perdidas:
-                                self.rapid_target_buy_frac = 0.5
-                                self.add_log(f"⚠️ Muchas pérdidas en BUY, cambiando a modo 50/50 (exploración)", 'warning')
-                            elif self.rapid_adapt_frac < 0.15 and perdidas_sell >= max_perdidas:
-                                self.rapid_target_buy_frac = 0.5
-                                self.add_log(f"⚠️ Muchas pérdidas en SELL, cambiando a modo 50/50 (exploración)", 'warning')
+                            # --- ADAPTACIÓN: Removida - análisis de histórico de operaciones rápidas deshabilitado ---
+                            # for e in list(self.rapid_ops_history)[-max_perdidas*2:]:
+                            #     ... - DESHABILITADO
                             
                             # ⭐ Remover operación de manera thread-safe
                             try:
@@ -5531,22 +5312,8 @@ class MT5AdaptiveTradingBot:
             self.add_log(f"[ERROR] Error check_and_close_rapid: {str(e)}", 'error')
 
     def _get_rapid_direction_loss_streak(self, direction):
-        """Retorna pérdidas consecutivas recientes para una dirección (BUY/SELL)."""
-        try:
-            if direction not in ('BUY', 'SELL'):
-                return 0
-            streak = 0
-            history = list(self.rapid_ops_history)[-20:]
-            for item in reversed(history):
-                if item.get('type') != direction:
-                    continue
-                if float(item.get('profit', 0.0)) < 0:
-                    streak += 1
-                else:
-                    break
-            return streak
-        except Exception:
-            return 0
+        """DESHABILITADO: No se usa histórico de operaciones rápidas. Solo análisis de mercado actual."""
+        return 0
 
     def _apply_rapid_reversal_protection(self, symbol, positions):
         """
@@ -5768,25 +5535,13 @@ class MT5AdaptiveTradingBot:
                 except Exception:
                     pass
 
-                # Actualizar IA adaptativa (fracción BUY) y mini-historial
-                try:
-                    buy_frac = self._compute_rapid_ops_distribution()
-                    # Actualizar barra/label si existen (compute ya actualiza cuando hay cambios)
-                    if hasattr(self, 'rapid_history_label'):
-                        # Mostrar últimos N: contar BUY/SELL y promedio profit
-                        hist = list(self.rapid_ops_history)
-                        if len(hist) == 0:
-                            hist_text = "Hist: -"
-                        else:
-                            lastn = hist[-10:]
-                            bcnt = sum(1 for h in lastn if h['type'] == 'BUY')
-                            scnt = sum(1 for h in lastn if h['type'] == 'SELL')
-                            bavg = (sum(h['profit'] for h in lastn if h['type'] == 'BUY') / bcnt) if bcnt>0 else 0.0
-                            savg = (sum(h['profit'] for h in lastn if h['type'] == 'SELL') / scnt) if scnt>0 else 0.0
-                            hist_text = f"Hist(10): B{bcnt} S{scnt} | avgB ${bavg:.2f} avgS ${savg:.2f}"
-                        self.rapid_history_label.config(text=hist_text)
-                except Exception:
-                    pass
+                # Actualizar IA adaptativa (fracción BUY) y mini-historial - DESHABILITADO
+                # try:
+                #     buy_frac = self._compute_rapid_ops_distribution()
+                #     hist = list(self.rapid_ops_history)
+                #     ... - DESHABILITADO
+                # except Exception:
+                #     pass
 
         except Exception as e:
             pass  # Silenciar errores de UI en thread
@@ -5870,20 +5625,20 @@ class MT5AdaptiveTradingBot:
         """
         try:
             if forced_value is None:
-                raw_value = float(self.config.get('FORCED_OPEN_MINUTES', tk.DoubleVar(value=0.3)).get())
+                raw_value = float(self.config.get('FORCED_OPEN_MINUTES', tk.DoubleVar(value=1)).get())
             else:
                 raw_value = float(forced_value)
         except Exception:
-            raw_value = 0.3
+            raw_value = 1
 
         if raw_value <= 0:
-            raw_value = 0.3
+            raw_value = 1
 
         # ⭐ LÓGICA DUAL IDÉNTICA A TRADE_INTERVAL
         if raw_value < 1:
-            interval_seconds = raw_value * 100.0  # 0.3 * 100 = 30 segundos
+            interval_seconds = raw_value * 100.0  # 0.3 * 100 = 30 segundos, 0.5 * 100 = 50 segundos
         else:
-            interval_seconds = raw_value * 60.0  # 1 * 60 = 60 segundos
+            interval_seconds = raw_value * 60.0  # 1 * 60 = 60 segundos (default), 2 * 60 = 120 segundos
 
         # En volatilidad alta reaccionar más rápido sin llegar a spam extremo.
         try:
@@ -5968,14 +5723,32 @@ class MT5AdaptiveTradingBot:
                 - True: Respeta TODAS las pausas (ganancia, pérdida, etc.) - para abrir operaciones
                 - False: Solo respeta pausa de EMERGENCIA (force_stop) - para monitoreo
         
+        MODO MÚLTIPLES PARTES:
+            - Cada símbolo es 100% INDEPENDIENTE
+            - Si GOLD causa pausa de ganancia, NO afecta a SILVER
+            - Cada uno tiene su propio análisis, apertura y cierre
+            - Solo EMERGENCIA (force_stop) afecta globalmente
+        
         Returns:
             (bool, str): (en_pausa, razón_pausa)
         """
         now = time.time()
         
-        # 1️⃣ PAUSA DE EMERGENCIA (máxima prioridad)
+        # 1️⃣ PAUSA DE EMERGENCIA (máxima prioridad - GLOBAL, afecta a TODOS)
         if getattr(self, 'force_stop_triggered', False):
             return True, "🛑 EMERGENCIA: Force stop activado"
+        
+        # ⭐ EN MODO MÚLTIPLES PARTES: Pausas POST-OPERACIÓN son INDEPENDIENTES por símbolo
+        # Esto permite que GOLD tenga pausa pero SILVER abra normalmente
+        try:
+            use_multiple = self.config.get('USE_MULTIPLE_PARTS', tk.BooleanVar(value=False)).get()
+        except:
+            use_multiple = False
+        
+        if use_multiple and strict:
+            # En modo múltiples partes, solo respetar emergencia
+            # Las pausas post-operación no bloquean (cada símbolo es independiente)
+            return False, ""
         
         if self.bot_pausado:
             if self.pause_until and now < self.pause_until:
@@ -5988,8 +5761,8 @@ class MT5AdaptiveTradingBot:
                 self.pause_until = 0.0
                 self.pause_reason = ""
         
-        # 2️⃣ COOLDOWN (solo si strict=True)
-        if strict and self.block_until and now < self.block_until:
+        # 2️⃣ COOLDOWN (solo si strict=True y NO en modo múltiples partes)
+        if strict and not use_multiple and self.block_until and now < self.block_until:
             remaining = int(self.block_until - now)
             return True, f"⏳ Cooldown activo ({remaining}s resta)"
         
@@ -6393,19 +6166,19 @@ class MT5AdaptiveTradingBot:
                 "tiempo": datetime.now().strftime("%H:%M:%S")
             })
 
-            try:
-                self.directional_trade_history.append({
-                    'time': time.time(),
-                    'direction': 'BUY' if pos_type == mt5.POSITION_TYPE_BUY else 'SELL',
-                    'profit': float(profit)
-                })
-            except Exception:
-                pass
+            # Histórico de trades removido: solo análisis de mercado actual
+            # self.directional_trade_history.append({...}) - DESHABILITADO
             
             if len(self.historial_resultados) > self.max_historial:
                 self.historial_resultados.pop(0)
             
             self.total_operaciones_abiertas = max(0, self.total_operaciones_abiertas - 1)
+            
+            # ⭐ NUEVO: Reiniciar contador de tiempo cuando no hay más operaciones abiertas
+            if self.total_operaciones_abiertas == 0:
+                self.ultima_operacion = time.time()
+                self.add_log(f"[CONTADOR] Todas las operaciones cerradas. Contador de intervalo reiniciado.", 'info')
+            
             if ticket in self.position_ids:
                 self.position_ids.remove(ticket)
             if ticket in self.position_tracking:
@@ -6465,15 +6238,9 @@ class MT5AdaptiveTradingBot:
                 # Obtener confianza del último análisis
                 last_confidence = getattr(self, 'last_analysis_confidence', 50)
                 
-                # Registrar operación
-                self.adaptive_params.record_trade_result(
-                    direction='BUY' if pos_type == mt5.POSITION_TYPE_BUY else 'SELL',
-                    entry_price=entry_price,
-                    exit_price=current_price,
-                    profit=profit,
-                    confidence=last_confidence,
-                    market_volatility=getattr(self, 'current_market_volatility', 1.0)
-                )
+                # Registro de trades deshabilitado: solo análisis de mercado
+                # self.adaptive_params.record_trade_result(...) - DESHABILITADO
+                
                 # Registrar cierre en logs JSON (operación normal)
                 try:
                     log_trade({
@@ -6587,32 +6354,11 @@ class MT5AdaptiveTradingBot:
     def register_trade_for_calibration(self, signal_type, confidence, entry_price, exit_price, pnl_pips):
         """Registra trade cerrado para Dynamic Calibration"""
         try:
-            if not hasattr(self, 'closed_trades_for_calibration'):
-                self.closed_trades_for_calibration = {}
-            
-            trade_id = len(self.closed_trades_for_calibration)
-            self.closed_trades_for_calibration[trade_id] = {
-                'signal_type': signal_type,
-                'confidence': confidence,
-                'entry': entry_price,
-                'exit': exit_price,
-                'pnl_pips': pnl_pips,
-                'timestamp': datetime.now()
-            }
-            
-            # Registrar en calibrador
-            self.calibrator.record_trade(
-                signal_type=signal_type,
-                confidence=confidence,
-                entry_price=entry_price,
-                exit_price=exit_price,
-                pnl_pips=pnl_pips
-            )
-            
-            # Cada 50 trades, auto-calibrar
-            if len(self.closed_trades_for_calibration) % 50 == 0:
-                self.calibrator.auto_calibrate()
-                self.add_log(f"[ACTUALIZAR] Auto-calibración ejecutada ({len(self.closed_trades_for_calibration)} trades)", 'info')
+            # Calibración removida: solo análisis de mercado actual
+            # self.closed_trades_for_calibration - DESHABILITADO
+            # self.calibrator.record_trade(...) - DESHABILITADO
+            # self.calibrator.auto_calibrate() - DESHABILITADO
+            pass
         
         except Exception as e:
             self.add_log(f"Error registrando trade para calibración: {str(e)}", 'warning')
@@ -7092,23 +6838,78 @@ class MT5AdaptiveTradingBot:
                             self.last_signal_confidence = signal_confidence
                             self.add_log(f"[CONFIDENCE] Señal con confianza: {signal_confidence}%", 'info')
                             
-                            # NUEVO: Registrar metadata para feedback loop (pre-trade captura)
-                            self.last_trade_metadata = {
-                                'analysis_source': analysis_result.get('source', 'UNKNOWN'),
-                                'buy_score': analysis_result.get('buy_score', 0),
-                                'sell_score': analysis_result.get('sell_score', 0),
-                                'confidence': signal_confidence,
-                                'direction': direccion,
-                                'motor_votes': analysis_result.get('motor_votes', {}),
-                                'entry_rsi': analysis_result.get('entry_rsi', 50),
-                                'entry_volatility': analysis_result.get('volatility', 1.0),
-                                'timestamp': time.time()
-                            }
-                            self.add_log(f"[FEEDBACK] Metadata registrada para análisis posterior", 'info')
+                            # ⭐ NUEVO: ANÁLISIS MULTI-PERÍODO PRE-APERTURA (10, 20, 30 velas simultáneamente)
+                            self.add_log(f"\n🔄 Validando con análisis multi-período (10/20/30 velas)...", 'info')
+                            multi_analysis = self._multi_period_candle_analysis(symbol, direccion)
                             
-                            if self.abrir_operacion(direccion, force=False):
+                            if not multi_analysis.get('valid', False):
+                                self.add_log(
+                                    f"[❌ MULTI-PERÍODO RECHAZÓ] {multi_analysis.get('reason', 'Confianza insuficiente')} "
+                                    f"({multi_analysis.get('confidence', 0):.1f}%)",
+                                    'warning'
+                                )
+                                time.sleep(0.05)
+                                continue
+                            
+                            # ⭐ NUEVO: Si es GOLD, validar contra configuración óptima
+                            if symbol.upper() == 'GOLD' or symbol == 'XAUUSD':
+                                self.add_log(f"\n🟡 Aplicando validación CONFIG ÓPTIMA para GOLD...", 'info')
+                                gold_validation = self._validate_gold_optimal_entry(symbol, direccion)
+                                
+                                if not gold_validation.get('valid', False):
+                                    self.add_log(
+                                        f"[❌ CONFIG GOLD RECHAZÓ] {gold_validation.get('reason', 'No cumple criterios')}",
+                                        'warning'
+                                    )
+                                    time.sleep(0.05)
+                                    continue
+                                
+                                # Incorporar score de GOLD en confianza final
+                                gold_score = gold_validation.get('score', 0)
+                                combined_confidence = (signal_confidence + multi_analysis['confidence'] + gold_score) / 3
+                                self.add_log(
+                                    f"[✅ VALIDACIÓN COMPLETA] Confianza final: {combined_confidence:.1f}% "
+                                    f"(Análisis + Multi-período + CONFIG GOLD)",
+                                    'success'
+                                )
+                            
+                            # ⭐ NUEVO: Si es SILVER, validar contra configuración óptima
+                            elif symbol.upper() == 'SILVER' or symbol == 'XAGUSD':
+                                self.add_log(f"\n🔥 Aplicando validación CONFIG ÓPTIMA para SILVER...", 'info')
+                                silver_validation = self._validate_silver_optimal_entry(symbol, direccion)
+                                
+                                if not silver_validation.get('valid', False):
+                                    self.add_log(
+                                        f"[❌ CONFIG SILVER RECHAZÓ] {silver_validation.get('reason', 'No cumple criterios')}",
+                                        'warning'
+                                    )
+                                    time.sleep(0.05)
+                                    continue
+                                
+                                # Incorporar score de SILVER en confianza final
+                                silver_score = silver_validation.get('score', 0)
+                                combined_confidence = (signal_confidence + multi_analysis['confidence'] + silver_score) / 3
+                                self.add_log(
+                                    f"[✅ VALIDACIÓN COMPLETA] Confianza final: {combined_confidence:.1f}% "
+                                    f"(Análisis + Multi-período + CONFIG SILVER)",
+                                    'success'
+                                )
+                            else:
+                                # Combinar confianzas (sin validación GOLD)
+                                combined_confidence = (signal_confidence + multi_analysis['confidence']) / 2
+                                self.add_log(
+                                    f"[✅ VALIDACIÓN EXITOSA] Confianza combinada: {combined_confidence:.1f}% "
+                                    f"(Análisis: {analysis_result.get('source', '??')} + Multi-período)",
+                                    'success'
+                                )
+                            
+                            # NUEVO: Registrar metadata para feedback loop (pre-trade captura)
+                            # Metadata de trade - REMOVIDA: solo análisis de mercado
+                            # self.last_trade_metadata = {...} - DESHABILITADO
+                            
+                            if self.abrir_operacion_smart(direccion, force=False):
                                 self.ultima_operacion = time.time()
-                                self.last_confidence = analysis_result.get('confidence', 0)
+                                self.last_confidence = combined_confidence
                                 self.add_log("[ESPERA] Esperando resultado de la operación...", 'info')
                         else:
                             reason = analysis_result.get('reason', 'Sin definir') if analysis_result else 'Ambos análisis fallaron'
@@ -7289,28 +7090,18 @@ class MT5AdaptiveTradingBot:
             except Exception:
                 snaps = []
 
-            # Ejecutar calibración rápida desde logs y aplicar sugerencias
-            try:
-                cal = calibrate_from_logs(limit=1000)
-                if cal and isinstance(cal, dict):
-                    if 'risk_pct' in cal and 'RISK_PCT' in self.config:
-                        self.config['RISK_PCT'].set(float(cal['risk_pct']))
-                        self.add_log(f"[CONFIG] Calibración automática: RISK_PCT -> {cal['risk_pct']}", 'success')
-                    if 'confidence_threshold' in cal and 'CONFIDENCE_THRESHOLD' in self.config:
-                        self.config['CONFIDENCE_THRESHOLD'].set(float(cal['confidence_threshold']))
-                        self.add_log(f"[CONFIG] Calibración automática: CONFIDENCE_THRESHOLD -> {cal['confidence_threshold']}", 'success')
-            except Exception:
-                logger.exception("Error ejecutando calibrate_from_logs en pre-open")
+            # Calibración removida: solo análisis de mercado actual
+            # try:
+            #     cal = calibrate_from_logs(limit=1000)
+            #     ... - DESHABILITADO
+            # except Exception:
+            #     logger.exception("Error ejecutando calibrate_from_logs en pre-open")
 
-            # Auto-calibrador dinámico local
-            try:
-                # Registrar estadísticas y ajustar umbrales si aplica
-                try:
-                    self.calibrator.auto_calibrate()
-                except Exception:
-                    pass
-            except Exception:
-                logger.exception("Error en calibrador dinámico antes de abrir")
+            # Auto-calibrador dinámico local - DESHABILITADO
+            # try:
+            #     self.calibrator.auto_calibrate()
+            # except Exception:
+            #     pass
 
             # Validación final: pedir a especialistas que evalúen los snaps más recientes
             try:
@@ -7444,7 +7235,7 @@ class MT5AdaptiveTradingBot:
                     
                     # Escribir en disco (trade_logger) con PERSISTENCIA HISTÓRICA
                     try:
-                        symbol = self.config.get('SYMBOL', tk.StringVar(value='ETHUSD')).get() if hasattr(self, 'config') else 'ETHUSD'
+                        symbol = self.config.get('SYMBOL', tk.StringVar(value='GOLD')).get() if hasattr(self, 'config') else 'GOLD'
                         # ⭐ NUEVO: Pasar símbolo y max_snapshots para metadata e historial automático
                         write_market_snapshots(merged_list, symbol=symbol, max_snapshots=1440)
                         self.data_update_count += 1
@@ -7918,73 +7709,18 @@ class MT5AdaptiveTradingBot:
             self.add_log(f"Error calculando potencial: {str(e)}", 'error')
             return 100.0  # En caso de error, permitir
 
-    # ⭐ NUEVO: Sistema de volumen dinámico (Kelly-inspired)
+    # ⭐ DESHABILITADO: Sistema de volumen dinámico (Kelly-inspired)
+    # No usa histórico de trades, solo mercado actual
     def _calculate_kelly_fraction(self):
         """
-        ⭐ KELLY REAL: Calcula fracción óptima basada en histórico de trades
+        DESHABILITADO: No se usan datos de trades anteriores. Solo análisis de mercado actual.
         
-        Fórmula: f* = (p*b - q) / b
-        Donde:
-            f* = fracción óptima de capital a arriesgar
-            p = win rate (0-1)
-            q = loss rate (1 - p)
-            b = ratio promedio ganancia/pérdida
-        
-        Retorna: (kelly_fraction, win_rate, profit_factor)
+        Retorna: (kelly_fraction, win_rate, profit_factor) - valores neutros
         """
         try:
-            if not hasattr(self, 'historial_resultados'):
-                return 0.02, 0.50, 1.0  # Default conservador
-            
-            trades = self.historial_resultados[-100:]  # Últimos 100 trades
-            if len(trades) < 10:
-                return 0.02, 0.50, 1.0  # Insuficientes datos
-            
-            # Extraer ganancias/pérdidas
-            profits = [float(t.get('profit', 0)) for t in trades]
-            
-            wins = [p for p in profits if p > 0]
-            losses = [abs(p) for p in profits if p <= 0]
-            
-            # Evitar división por cero
-            if not wins or not losses:
-                return 0.02, 0.50, 1.0
-            
-            # Calcular métricas
-            win_count = len(wins)
-            total_count = len(trades)
-            win_rate = win_count / total_count
-            
-            avg_win = sum(wins) / len(wins)
-            avg_loss = sum(losses) / len(losses)
-            
-            # Ratio de ganancia/pérdida
-            profit_factor = avg_win / avg_loss if avg_loss > 0 else 1.0
-            
-            # Kelly fraction teórica
-            # f* = (p*b - q) / b = p - q/b
-            b = profit_factor
-            q = 1 - win_rate
-            kelly_theoretical = max(0, (win_rate * b - q) / b if b > 0 else 0)
-            
-            # Aplicar factor de seguridad (típicamente 25-50% de Kelly teórica)
-            # Para evitar ruina con volatilidad
-            safety_factor = 0.35  # 35% de Kelly (muy conservador)
-            kelly_safe = kelly_theoretical * safety_factor
-            
-            # Limites extremos
-            kelly_safe = max(0.005, min(kelly_safe, 0.10))  # 0.5% a 10%
-            
-            self.add_log(
-                f"[KELLY] WR:{win_rate*100:.1f}% | PF:{profit_factor:.2f} | "
-                f"Kelly_theo:{kelly_theoretical*100:.2f}% → Kelly_safe:{kelly_safe*100:.2f}%",
-                'info'
-            )
-            
-            return kelly_safe, win_rate, profit_factor
-            
-        except Exception as e:
-            self.add_log(f"[KELLY] Error: {str(e)[:50]}", 'warning')
+            # Valores neutros: sin usar histórico
+            return 0.02, 0.50, 1.0  # Conservative defaults
+        except Exception:
             return 0.02, 0.50, 1.0
     
     def _validate_margin_available(self, volume, symbol):
@@ -8194,6 +7930,76 @@ class MT5AdaptiveTradingBot:
         except Exception as e:
             self.add_log(f"[VOLUMEN] Error calculando volumen dinámico: {str(e)[:60]}", 'warning')
             return float(self.config['VOL'].get())
+
+    def abrir_operacion_smart(self, direccion, force=False, startup=False):
+        """
+        ⭐ APERTURA INTELIGENTE - Detecta si usar múltiples partes (GOLD + SILVER simultáneamente)
+        
+        - Si USE_MULTIPLE_PARTS=False: Abre 1 operación en símbolo configurado (normal)
+        - Si USE_MULTIPLE_PARTS=True: Abre 1 en GOLD + 1 en SILVER CON ANÁLISIS INDEPENDIENTE
+          → Cada una se analiza y determina su propia dirección óptima (BUY o SELL)
+          → Cada una con sus propios parámetros GOLD_THRESHOLD/SILVER_THRESHOLD
+          → Cada una con su propia monitorización
+          → Comparten SOLO TP Global y SL Global
+        
+        Retorna: bool (True si ambas abrieron en modo múltiple, o si abrió en modo normal)
+        """
+        try:
+            use_multiple = self.config.get('USE_MULTIPLE_PARTS', tk.BooleanVar(value=False)).get()
+        except:
+            use_multiple = False
+        
+        if not use_multiple:
+            # Modo normal: 1 operación en símbolo configurado
+            return self.abrir_operacion(direccion, force=force, startup=startup)
+        
+        # ⭐ MODO MÚLTIPLES PARTES: Abrir en GOLD + SILVER CON ANÁLISIS INDEPENDIENTE
+        self.add_log(f"\n{'='*60}", 'warning')
+        self.add_log(f"[MÚLTIPLES PARTES] Analizando GOLD y SILVER de forma INDEPENDIENTE...", 'warning')
+        self.add_log(f"{'='*60}\n", 'warning')
+        
+        symbol_actual = self.config['SYMBOL'].get()
+        
+        # ⭐ ANÁLISIS INDEPENDIENTE PARA GOLD
+        self.add_log(f"[1/4] Analizando GOLD...", 'info')
+        gold_direction, gold_buy_score, gold_sell_score, _ = self._quick_analysis_for_forced_reopen('GOLD')
+        self.add_log(f"[1/4] ✅ GOLD: Dirección óptima = {gold_direction} (BUY={gold_buy_score:.1f}, SELL={gold_sell_score:.1f})", 'success')
+        
+        # Pausa mínima entre análisis
+        time.sleep(0.3)
+        
+        # ⭐ ANÁLISIS INDEPENDIENTE PARA SILVER
+        self.add_log(f"[2/4] Analizando SILVER...", 'info')
+        silver_direction, silver_buy_score, silver_sell_score, _ = self._quick_analysis_for_forced_reopen('SILVER')
+        self.add_log(f"[2/4] ✅ SILVER: Dirección óptima = {silver_direction} (BUY={silver_buy_score:.1f}, SELL={silver_sell_score:.1f})", 'success')
+        
+        # ⭐ ABRIR EN GOLD CON SU DIRECCIÓN ÓPTIMA
+        self.add_log(f"[3/4] Abriendo en GOLD con dirección {gold_direction}...", 'info')
+        self.config['SYMBOL'].set('GOLD')
+        gold_result = self.abrir_operacion(gold_direction, force=force, startup=startup)
+        
+        # Pausa mínima entre órdenes para evitar race conditions
+        time.sleep(0.5)
+        
+        # ⭐ ABRIR EN SILVER CON SU DIRECCIÓN ÓPTIMA (INDEPENDIENTE)
+        self.add_log(f"[4/4] Abriendo en SILVER con dirección {silver_direction}...", 'info')
+        self.config['SYMBOL'].set('SILVER')
+        silver_result = self.abrir_operacion(silver_direction, force=force, startup=startup)
+        
+        # Restaurar símbolo original
+        self.config['SYMBOL'].set(symbol_actual)
+        
+        # Log resultado
+        if gold_result and silver_result:
+            self.add_log(f"[ÉXITO] Ambas partes abiertas: GOLD({gold_direction})✅ + SILVER({silver_direction})✅", 'success')
+            return True
+        elif gold_result or silver_result:
+            status = f"GOLD({gold_direction}){'✅' if gold_result else '❌'} + SILVER({silver_direction}){'✅' if silver_result else '❌'}"
+            self.add_log(f"[PARCIAL] Una parte abierta: {status}", 'warning')
+            return True  # Retornar True si al menos una abrió
+        else:
+            self.add_log(f"[FALLO] Ninguna parte se abrió: GOLD({gold_direction})❌ + SILVER({silver_direction})❌", 'error')
+            return False
 
     def abrir_operacion(self, direccion_sugerida, force=False, startup=False, force_params=None):
         """Versión mejorada para una sola operación con mejor análisis.
@@ -8418,16 +8224,33 @@ class MT5AdaptiveTradingBot:
             buy_count_live = sum(1 for p in all_positions_live if getattr(p, 'type', None) == mt5.POSITION_TYPE_BUY)
             sell_count_live = sum(1 for p in all_positions_live if getattr(p, 'type', None) == mt5.POSITION_TYPE_SELL)
             
-            if open_positions_live >= max_ops:
-                self.add_log(f"[ABRIR] ❌ Max ops alcanzado: {open_positions_live}/{max_ops} (query dinámica)", 'warning')
+            # ⭐ EN MODO MÚLTIPLES PARTES: Cada símbolo tiene su propio límite MAX_OPS (100% independiente)
+            # EN MODO NORMAL: Usa el límite global
+            try:
+                use_multiple = self.config.get('USE_MULTIPLE_PARTS', tk.BooleanVar(value=False)).get()
+            except:
+                use_multiple = False
+            
+            # En modo múltiples partes, cada símbolo usa su propio contador sin considerar el otro
+            # Esto permite GOLD tener MAX_OPS y SILVER tener MAX_OPS simultáneamente
+            if use_multiple:
+                # Cada símbolo puede tener hasta MAX_OPS sin restricción del otro
+                effective_max = max_ops
+                self.add_log(f"[ABRIR] 🔵 MODO MÚLTIPLES PARTES: {symbol} cuenta independientemente", 'info')
+            else:
+                # Modo normal: usar MAX_OPS global
+                effective_max = max_ops
+            
+            if open_positions_live >= effective_max:
+                self.add_log(f"[ABRIR] ❌ Límite en {symbol}: {open_positions_live}/{effective_max} (100% independiente)", 'warning')
                 return False
             
             # Actualizar el contador local para que sea consistente
             self.total_operaciones_abiertas = open_positions_live
-            self.add_log(f"[ABRIR] ✓ Posiciones vivas: {open_positions_live}/{max_ops}", 'info')
+            self.add_log(f"[ABRIR] ✓ Posiciones en {symbol}: {open_positions_live}/{effective_max}", 'info')
 
             # Límite de stacking por dirección desactivado: sólo aplica MAX_SIMULTANEOUS_OPS
-            self.add_log(f"[STACK] BUY:{buy_count_live} SELL:{sell_count_live} Total:{open_positions_live}/{max_ops}", 'info')
+            self.add_log(f"[STACK] {symbol} - BUY:{buy_count_live} SELL:{sell_count_live} Total:{open_positions_live}/{effective_max}", 'info')
         except Exception as e:
             import traceback
             self.add_log(f"[ABRIR] ⚠️ ERROR query: {type(e).__name__}: {str(e)[:80]}", 'error')
@@ -8801,14 +8624,12 @@ class MT5AdaptiveTradingBot:
                     'tp': float(getattr(pos, 'tp', executed_tp)),
                 }
                 
-                # NUEVO: Registrar metadata en feedback loop para análisis posterior
-                try:
-                    if self.last_trade_metadata:
-                        self.last_trade_metadata['ticket'] = int(pos.ticket)
-                        self.feedback_loop_ai.record_trade_analysis(self.last_trade_metadata)
-                        self.add_log(f"[FEEDBACK] Análisis #{pos.ticket} registrado para retroalimentación", 'info')
-                except Exception as e:
-                    self.add_log(f"[FEEDBACK] Error registrando análisis: {str(e)[:50]}", 'warning')
+                # Metadata de trades removida: solo análisis de mercado actual
+                # try:
+                #     if self.last_trade_metadata:
+                #         self.feedback_loop_ai.record_trade_analysis(...) - DESHABILITADO
+                # except Exception:
+                #     pass
                 
                 executed_volume = float(pos.volume)
                 try:
@@ -13978,6 +13799,491 @@ Se abrirá al precio actual de mercado."""
             else:
                 self.add_log(f"[ERROR] Error: No hay respuesta de MT5", 'error')
             return False
+
+    def _multi_period_candle_analysis(self, symbol, direction):
+        """
+        ⭐ ANÁLISIS MULTI-PERÍODO PRE-APERTURA
+        Analiza simultáneamente 10, 20 y 30 velas ANTES de abrir
+        
+        Retorna: {
+            'valid': bool,
+            'confidence': 0-100,
+            'strength_10': 0-100,
+            'strength_20': 0-100,
+            'strength_30': 0-100,
+            'consensus': 'STRONG' | 'MEDIUM' | 'WEAK',
+            'reason': str,
+            'details': dict
+        }
+        """
+        try:
+            # Obtener 30 velas de una vez
+            snapshots = self.get_fresh_market_data(symbol, bars=32) or []
+            if len(snapshots) < 30:
+                return {
+                    'valid': False,
+                    'confidence': 0,
+                    'reason': f'Velas insuficientes: {len(snapshots)}/30'
+                }
+            
+            # Preparar estructuras para análisis paralelo
+            results = {}
+            threads = []
+            lock = threading.Lock()
+            
+            # ⭐ FUNCIÓN INTERNA: Analizar N velas específicas
+            def analyze_period(last_n, period_name):
+                try:
+                    period_data = snapshots[-last_n:] if len(snapshots) >= last_n else snapshots
+                    
+                    # Contadores básicos
+                    up_count = 0
+                    down_count = 0
+                    closes_above_open = 0
+                    strength_score = 0
+                    
+                    for candle in period_data:
+                        c_open = float(candle.get('open', 0))
+                        c_close = float(candle.get('close', 0))
+                        
+                        if c_open <= 0 or c_close <= 0:
+                            continue
+                        
+                        if c_close > c_open:
+                            up_count += 1
+                            closes_above_open += 1
+                        elif c_close < c_open:
+                            down_count += 1
+                    
+                    # Calcular fuerza según dirección
+                    if direction == "BUY":
+                        strength_score = min(100, (closes_above_open / max(1, len(period_data))) * 100)
+                    else:  # SELL
+                        strength_score = min(100, ((len(period_data) - closes_above_open) / max(1, len(period_data))) * 100)
+                    
+                    with lock:
+                        results[period_name] = {
+                            'strength': strength_score,
+                            'up_candles': up_count,
+                            'down_candles': down_count,
+                            'direction_match': (direction == "BUY" and up_count > down_count) or 
+                                                (direction == "SELL" and down_count > up_count)
+                        }
+                except Exception as e:
+                    with lock:
+                        results[period_name] = {'strength': 0, 'error': str(e)}
+            
+            # ⭐ Lanzar análisis en paralelo para 10, 20, 30 velas
+            t10 = threading.Thread(target=analyze_period, args=(10, 'strength_10'), daemon=True)
+            t20 = threading.Thread(target=analyze_period, args=(20, 'strength_20'), daemon=True)
+            t30 = threading.Thread(target=analyze_period, args=(30, 'strength_30'), daemon=True)
+            
+            threads = [t10, t20, t30]
+            for t in threads:
+                t.start()
+            
+            # Esperar a que terminen (máx 2 segundos)
+            for t in threads:
+                t.join(timeout=2.0)
+            
+            # ⭐ Recopilar resultados
+            if 'strength_10' not in results or 'strength_20' not in results or 'strength_30' not in results:
+                return {
+                    'valid': False,
+                    'confidence': 0,
+                    'reason': 'Error en análisis paralelo'
+                }
+            
+            s10 = results['strength_10']['strength']
+            s20 = results['strength_20']['strength']
+            s30 = results['strength_30']['strength']
+            
+            # ⭐ Calcular confianza consolidada
+            confidence = (s10 * 0.4 + s20 * 0.35 + s30 * 0.25)  # Pesar más el corto plazo
+            
+            # Validar consenso
+            matches = sum([
+                results['strength_10'].get('direction_match', False),
+                results['strength_20'].get('direction_match', False),
+                results['strength_30'].get('direction_match', False)
+            ])
+            
+            if matches == 3:
+                consensus = 'STRONG'
+                consensus_bonus = 20
+            elif matches >= 2:
+                consensus = 'MEDIUM'
+                consensus_bonus = 10
+            else:
+                consensus = 'WEAK'
+                consensus_bonus = 0
+            
+            # Confianza final
+            final_confidence = min(100, confidence + consensus_bonus)
+            
+            # ⭐ Log detallado
+            self.add_log(f"\n📊 ANÁLISIS MULTI-PERÍODO:", 'info')
+            self.add_log(f"   • 10 velas: {s10:.1f}% | {results['strength_10']['up_candles']} up / {results['strength_10']['down_candles']} down", 'info')
+            self.add_log(f"   • 20 velas: {s20:.1f}% | {results['strength_20']['up_candles']} up / {results['strength_20']['down_candles']} down", 'info')
+            self.add_log(f"   • 30 velas: {s30:.1f}% | {results['strength_30']['up_candles']} up / {results['strength_30']['down_candles']} down", 'info')
+            self.add_log(f"   ➜ Consenso: {consensus} ({matches}/3 coinciden)", 'success')
+            self.add_log(f"   ➜ Confianza final: {final_confidence:.1f}%", 'success')
+            
+            # Decisión
+            valid = final_confidence >= 55  # Umbral mínimo
+            
+            return {
+                'valid': valid,
+                'confidence': final_confidence,
+                'strength_10': s10,
+                'strength_20': s20,
+                'strength_30': s30,
+                'consensus': consensus,
+                'reason': f'Consenso {consensus}: {final_confidence:.1f}% confianza',
+                'details': {
+                    'matches': matches,
+                    'periods_analyzed': 3
+                }
+            }
+            
+        except Exception as e:
+            self.add_log(f"[ERROR] Análisis multi-período falló: {str(e)}", 'error')
+            return {
+                'valid': False,
+                'confidence': 0,
+                'reason': f'Excepción: {str(e)}'
+            }
+
+    def _validate_gold_optimal_entry(self, symbol, direction, snapshots=None):
+        """
+        ⭐ VALIDACIÓN INTERNA: CONFIG ÓPTIMA PARA GOLD
+        
+        Valida entrada según configuración de ORO:
+        - Threshold ≥ 1.8
+        - Microtendencia: últimas 4 velas en dirección correcta
+        - Cuerpo ≥ 60%
+        - Impulso ≥ 1.5 puntos
+        
+        Retorna: {
+            'valid': bool,
+            'score': 0-100,
+            'checks': {...}
+        }
+        """
+        try:
+            if not snapshots:
+                snapshots = self.get_fresh_market_data(symbol, bars=32) or []
+            
+            if len(snapshots) < 5:
+                return {
+                    'valid': False,
+                    'score': 0,
+                    'reason': f'Velas insuficientes: {len(snapshots)}'
+                }
+            
+            checks = {}
+            
+            # ⭐ 1. VALIDAR THRESHOLD (EN PIPS, COMO MICROTREND_THRESHOLD)
+            try:
+                threshold_pips = float(self.config.get('GOLD_THRESHOLD', tk.DoubleVar(value=18)).get())
+            except:
+                threshold_pips = 18
+            
+            # Convertir pips a decimal (18 pips * 0.01 = 0.18)
+            pip_size = 0.01
+            threshold = threshold_pips * pip_size
+            
+            # Calcular pendiente de últimas 3 velas como indicador de impulso
+            last_3 = snapshots[-3:]
+            if len(last_3) >= 3:
+                close_1 = float(last_3[0].get('close', 0))
+                close_2 = float(last_3[1].get('close', 0))
+                close_3 = float(last_3[2].get('close', 0))
+                impulse_value = abs(close_3 - close_1)
+                checks['threshold'] = {
+                    'value': impulse_value,
+                    'required': threshold,
+                    'valid': impulse_value >= threshold,
+                    'threshold_pips': threshold_pips
+                }
+            
+            # ⭐ 2. VALIDAR MICROTENDENCIA (últimas 4 velas)
+            try:
+                microtrend_candles = int(self.config.get('GOLD_MICROTREND_CANDLES', tk.IntVar(value=4)).get())
+            except:
+                microtrend_candles = 4
+            
+            last_n = snapshots[-microtrend_candles:]
+            up_count = 0
+            down_count = 0
+            
+            for candle in last_n:
+                c_open = float(candle.get('open', 0))
+                c_close = float(candle.get('close', 0))
+                if c_open > 0 and c_close > 0:
+                    if c_close > c_open:
+                        up_count += 1
+                    elif c_close < c_open:
+                        down_count += 1
+            
+            if direction == "BUY":
+                microtrend_valid = up_count > down_count and up_count >= microtrend_candles - 1
+            else:  # SELL
+                microtrend_valid = down_count > up_count and down_count >= microtrend_candles - 1
+            
+            checks['microtrend'] = {
+                'up': up_count,
+                'down': down_count,
+                'valid': microtrend_valid
+            }
+            
+            # ⭐ 3. VALIDAR CUERPO DE VELA (última vela)
+            try:
+                candle_body_pct = int(self.config.get('GOLD_CANDLE_BODY_PCT', tk.IntVar(value=60)).get())
+            except:
+                candle_body_pct = 60
+            
+            last_candle = snapshots[-1]
+            c_open = float(last_candle.get('open', 0))
+            c_close = float(last_candle.get('close', 0))
+            c_high = float(last_candle.get('high', 0))
+            c_low = float(last_candle.get('low', 0))
+            
+            if c_open > 0 and c_high > 0:
+                body_size = abs(c_close - c_open)
+                total_size = c_high - c_low
+                body_pct = (body_size / total_size * 100) if total_size > 0 else 0
+                body_valid = body_pct >= candle_body_pct
+            else:
+                body_pct = 0
+                body_valid = False
+            
+            checks['candle_body'] = {
+                'percentage': body_pct,
+                'required': candle_body_pct,
+                'valid': body_valid
+            }
+            
+            # ⭐ 4. VALIDAR IMPULSO MÍNIMO
+            try:
+                impulse_filter = float(self.config.get('GOLD_IMPULSE_FILTER', tk.DoubleVar(value=1.5)).get())
+            except:
+                impulse_filter = 1.5
+            
+            impulse_valid = checks['threshold'].get('valid', False)
+            
+            checks['impulse'] = {
+                'value': impulse_value,
+                'required': impulse_filter,
+                'valid': impulse_value >= impulse_filter
+            }
+            
+            # ⭐ DECISIÓN FINAL
+            valid = (
+                checks['threshold'].get('valid', False) and
+                checks['microtrend'].get('valid', False) and
+                checks['candle_body'].get('valid', False) and
+                checks['impulse'].get('valid', False)
+            )
+            
+            # Calcular score
+            score = 0
+            for check_name in ['threshold', 'microtrend', 'candle_body', 'impulse']:
+                if checks[check_name].get('valid', False):
+                    score += 25
+            
+            # Log detallado
+            self.add_log(f"\n🟡 VALIDACIÓN CONFIG ÓPTIMA GOLD:", 'info')
+            self.add_log(f"   ✓ Threshold: {checks['threshold']['value']:.2f} >= {checks['threshold']['required']:.2f} ({checks['threshold']['threshold_pips']:.0f} pips): {'✅' if checks['threshold']['valid'] else '❌'}", 'info')
+            self.add_log(f"   ✓ Microtendencia ({microtrend_candles}v): {checks['microtrend']['up']} up / {checks['microtrend']['down']} down: {'✅' if checks['microtrend']['valid'] else '❌'}", 'info')
+            self.add_log(f"   ✓ Cuerpo Vela: {checks['candle_body']['percentage']:.1f}% >= {checks['candle_body']['required']}%: {'✅' if checks['candle_body']['valid'] else '❌'}", 'info')
+            self.add_log(f"   ✓ Impulso: {checks['impulse']['value']:.2f} >= {checks['impulse']['required']:.2f}: {'✅' if checks['impulse']['valid'] else '❌'}", 'info')
+            self.add_log(f"   ➜ Score Final: {score}/100", 'success' if valid else 'warning')
+            
+            return {
+                'valid': valid,
+                'score': score,
+                'checks': checks,
+                'reason': 'Validación óptima GOLD completada' if valid else 'No cumple criterios GOLD'
+            }
+            
+        except Exception as e:
+            self.add_log(f"[ERROR] Validación GOLD falló: {str(e)}", 'error')
+            return {
+                'valid': False,
+                'score': 0,
+                'reason': f'Excepción: {str(e)}'
+            }
+
+    def _validate_silver_optimal_entry(self, symbol, direction, snapshots=None):
+        """
+        ⭐ VALIDACIÓN INTERNA: CONFIG ÓPTIMA PARA SILVER
+        
+        Valida entrada según configuración de PLATA:
+        - Threshold ≥ 1.6 (más bajo que ORO, plata más rápida)
+        - Microtendencia: últimas 4 velas en dirección correcta
+        - Cuerpo ≥ 60% (MÁS CRÍTICO en plata - evita mechas largas)
+        - Impulso ≥ 1.5 puntos
+        
+        ⚠️ NOTA: Si el ORO no está claro, NO operes PLATA
+        
+        Retorna: {
+            'valid': bool,
+            'score': 0-100,
+            'checks': {...}
+        }
+        """
+        try:
+            if not snapshots:
+                snapshots = self.get_fresh_market_data(symbol, bars=32) or []
+            
+            if len(snapshots) < 5:
+                return {
+                    'valid': False,
+                    'score': 0,
+                    'reason': f'Velas insuficientes: {len(snapshots)}'
+                }
+            
+            checks = {}
+            
+            # ⭐ 1. VALIDAR THRESHOLD (EN PIPS, COMO MICROTREND_THRESHOLD)
+            try:
+                threshold_pips = float(self.config.get('SILVER_THRESHOLD', tk.DoubleVar(value=15)).get())
+            except:
+                threshold_pips = 15
+            
+            # Convertir pips a decimal (15 pips * 0.01 = 0.15)
+            pip_size = 0.01
+            threshold = threshold_pips * pip_size
+            
+            # Calcular pendiente de últimas 3 velas como indicador de impulso
+            last_3 = snapshots[-3:]
+            if len(last_3) >= 3:
+                close_1 = float(last_3[0].get('close', 0))
+                close_2 = float(last_3[1].get('close', 0))
+                close_3 = float(last_3[2].get('close', 0))
+                impulse_value = abs(close_3 - close_1)
+                checks['threshold'] = {
+                    'value': impulse_value,
+                    'required': threshold,
+                    'valid': impulse_value >= threshold,
+                    'threshold_pips': threshold_pips
+                }
+            
+            # ⭐ 2. VALIDAR MICROTENDENCIA (últimas 4 velas, igual que GOLD)
+            try:
+                microtrend_candles = int(self.config.get('SILVER_MICROTREND_CANDLES', tk.IntVar(value=4)).get())
+            except:
+                microtrend_candles = 4
+            
+            last_n = snapshots[-microtrend_candles:]
+            up_count = 0
+            down_count = 0
+            
+            for candle in last_n:
+                c_open = float(candle.get('open', 0))
+                c_close = float(candle.get('close', 0))
+                if c_open > 0 and c_close > 0:
+                    if c_close > c_open:
+                        up_count += 1
+                    elif c_close < c_open:
+                        down_count += 1
+            
+            if direction == "BUY":
+                microtrend_valid = up_count > down_count and up_count >= microtrend_candles - 1
+            else:  # SELL
+                microtrend_valid = down_count > up_count and down_count >= microtrend_candles - 1
+            
+            checks['microtrend'] = {
+                'up': up_count,
+                'down': down_count,
+                'valid': microtrend_valid
+            }
+            
+            # ⭐ 3. VALIDAR CUERPO DE VELA (última vela) - MÁS CRÍTICO EN PLATA
+            try:
+                candle_body_pct = int(self.config.get('SILVER_CANDLE_BODY_PCT', tk.IntVar(value=60)).get())
+            except:
+                candle_body_pct = 60
+            
+            last_candle = snapshots[-1]
+            c_open = float(last_candle.get('open', 0))
+            c_close = float(last_candle.get('close', 0))
+            c_high = float(last_candle.get('high', 0))
+            c_low = float(last_candle.get('low', 0))
+            
+            if c_open > 0 and c_high > 0:
+                body_size = abs(c_close - c_open)
+                total_size = c_high - c_low
+                body_pct = (body_size / total_size * 100) if total_size > 0 else 0
+                # En PLATA, el filtro de cuerpo es MÁS ESTRICTO (evita mechas largas)
+                body_valid = body_pct >= candle_body_pct
+            else:
+                body_pct = 0
+                body_valid = False
+            
+            checks['candle_body'] = {
+                'percentage': body_pct,
+                'required': candle_body_pct,
+                'valid': body_valid,
+                'note': 'CRÍTICO en plata - evita mechas largas'
+            }
+            
+            # ⭐ 4. VALIDAR IMPULSO MÍNIMO
+            try:
+                impulse_filter = float(self.config.get('SILVER_IMPULSE_FILTER', tk.DoubleVar(value=1.5)).get())
+            except:
+                impulse_filter = 1.5
+            
+            impulse_valid = checks['threshold'].get('valid', False)
+            
+            checks['impulse'] = {
+                'value': impulse_value,
+                'required': impulse_filter,
+                'valid': impulse_value >= impulse_filter
+            }
+            
+            # ⭐ DECISIÓN FINAL
+            valid = (
+                checks['threshold'].get('valid', False) and
+                checks['microtrend'].get('valid', False) and
+                checks['candle_body'].get('valid', False) and
+                checks['impulse'].get('valid', False)
+            )
+            
+            # Calcular score
+            score = 0
+            for check_name in ['threshold', 'microtrend', 'candle_body', 'impulse']:
+                if checks[check_name].get('valid', False):
+                    score += 25
+            
+            # Log detallado
+            self.add_log(f"\n🔥 VALIDACIÓN CONFIG ÓPTIMA SILVER:", 'info')
+            self.add_log(f"   ✓ Threshold: {checks['threshold']['value']:.2f} >= {checks['threshold']['required']:.2f} ({checks['threshold']['threshold_pips']:.0f} pips): {'✅' if checks['threshold']['valid'] else '❌'}", 'info')
+            self.add_log(f"   ✓ Microtendencia ({microtrend_candles}v): {checks['microtrend']['up']} up / {checks['microtrend']['down']} down: {'✅' if checks['microtrend']['valid'] else '❌'}", 'info')
+            self.add_log(f"   ✓ Cuerpo Vela (CRÍTICO): {checks['candle_body']['percentage']:.1f}% >= {checks['candle_body']['required']}%: {'✅' if checks['candle_body']['valid'] else '❌'}", 'info')
+            self.add_log(f"   ✓ Impulso: {checks['impulse']['value']:.2f} >= {checks['impulse']['required']:.2f}: {'✅' if checks['impulse']['valid'] else '❌'}", 'info')
+            self.add_log(f"   ➜ Score Final: {score}/100", 'success' if valid else 'warning')
+            
+            # ⚠️ Advertencia importante sobre correlación con ORO
+            if valid:
+                self.add_log(f"   ⚠️  RECUERDA: Si el ORO no está claro → NO operes PLATA", 'warning')
+            
+            return {
+                'valid': valid,
+                'score': score,
+                'checks': checks,
+                'reason': 'Validación óptima SILVER completada' if valid else 'No cumple criterios SILVER'
+            }
+            
+        except Exception as e:
+            self.add_log(f"[ERROR] Validación SILVER falló: {str(e)}", 'error')
+            return {
+                'valid': False,
+                'score': 0,
+                'reason': f'Excepción: {str(e)}'
+            }
+
 
 if __name__ == "__main__":
     try:
