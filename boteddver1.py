@@ -3336,7 +3336,25 @@ class MT5AdaptiveTradingBot:
         self.trend_next_check_time = 0
         self.trend_last_signal = 'STABLE'
     
-    def _configure_symbol_parameters(self, symbol):
+    def _on_multiple_parts_toggle(self):
+        """⭐ Cuando se activa/desactiva 'Usar múltiples partes', controlar visibilidad del selector"""
+        try:
+            use_multiple = self.config.get('USE_MULTIPLE_PARTS', tk.BooleanVar(value=False)).get()
+            
+            if use_multiple:
+                # Activado: deshabilitar combobox y mostrar mensaje
+                if hasattr(self, 'symbol_combo_widget'):
+                    self.symbol_combo_widget.config(state='disabled')
+                    self.symbol_combo_widget.set('')
+                self.add_log("⚡ MÚLTIPLES PARTES activado: Usando GOLD + SILVER simultáneamente (selector deshabilitado)", 'info')
+            else:
+                # Desactivado: habilitar combobox
+                if hasattr(self, 'symbol_combo_widget'):
+                    self.symbol_combo_widget.config(state='readonly')
+                    self.symbol_combo_widget.set(self.config['SYMBOL'].get() or 'GOLD')
+                self.add_log("🔓 MÚLTIPLES PARTES desactivado: Operando con símbolo seleccionado en el Combobox", 'info')
+        except Exception as e:
+            self.add_log(f"Error en _on_multiple_parts_toggle: {str(e)[:60]}", 'error')
         """⭐ NUEVO: Configura automáticamente TODOS los parámetros según el par seleccionado"""
         try:
             symbol = symbol.upper()
@@ -3458,6 +3476,7 @@ class MT5AdaptiveTradingBot:
                 symbol_combo.bind('<<ComboboxSelected>>', 
                                  lambda e: self._configure_symbol_parameters(self.config['SYMBOL'].get()))
                 self.config_entries[key] = symbol_combo
+                self.symbol_combo_widget = symbol_combo  # Guardar referencia para habilitar/deshabilitar
             else:
                 entry = tk.Entry(row_frame, textvariable=self.config[key], bg='#475569', fg='white', relief='flat', font=('Arial', 9), insertbackground='white')
                 entry.pack(side='right', fill='x', expand=True)
@@ -3532,6 +3551,7 @@ class MT5AdaptiveTradingBot:
         
         tk.Checkbutton(sl_frame, text="⚡ Usar múltiples partes (GOLD + SILVER simultáneamente)", 
                       variable=self.config['USE_MULTIPLE_PARTS'],
+                      command=self._on_multiple_parts_toggle,
                       bg='#2d3e50', fg='#60a5fa', selectcolor='#1e293b',
                       activebackground='#2d3e50', activeforeground='#60a5fa',
                       font=('Arial', 10, 'bold')).pack(side='left', padx=5)
