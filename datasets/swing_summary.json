@@ -1,0 +1,45 @@
+{
+  "format": "SWING",
+  "timeframe": "M15/H1/H4",
+  "bars_total": 1536,
+  "sample": {
+    "symbol": "XAUUSD",
+    "timeframe": "M15",
+    "timestamp": "2026-02-02T18:27:56.796206",
+    "price": {
+      "open": 5335.05,
+      "high": 5427.92,
+      "low": 5372.97,
+      "close": 5410.93
+    },
+    "volume": {
+      "tick_volume": 2493
+    },
+    "trend_structure": {
+      "higher_high": false,
+      "higher_low": false,
+      "market_phase": "consolidation",
+      "structure_break": false
+    },
+    "indicators": {
+      "ema_50": 5410.93,
+      "ema_200": 5410.93,
+      "rsi_14": 50.0,
+      "atr_14": 54.94999999999982,
+      "adx": 20.7
+    },
+    "levels": {
+      "daily_high": 5427.92,
+      "daily_low": 5372.97,
+      "weekly_high": 5447.92,
+      "weekly_low": 5352.97,
+      "key_support": 5410.93,
+      "key_resistance": 5410.93
+    },
+    "context": {
+      "trend_H1": "bearish",
+      "trend_H4": "bullish",
+      "economic_event": false
+    }
+  }
+}

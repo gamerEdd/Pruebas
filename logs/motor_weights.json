@@ -1,0 +1,9 @@
+{
+  "ensemble_weight": 0.4,
+  "multiframe_weight": 0.4,
+  "neural_weight": 0.1,
+  "divergence_weight": 0.05,
+  "pattern_weight": 0.05,
+  "buy_specialist_weight": 0.26999999999999974,
+  "sell_specialist_weight": 0.4
+}

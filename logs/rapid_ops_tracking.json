@@ -1,0 +1,15 @@
+{
+  "validations": [],
+  "statistics": {
+    "total_validations": 0,
+    "total_approved": 0,
+    "total_rejected": 0,
+    "approved_win_rate": 0.0,
+    "rejected_win_rate": 0.0,
+    "by_risk_level": {
+      "LOW": 0,
+      "MEDIUM": 0,
+      "HIGH": 0
+    }
+  }
+}
