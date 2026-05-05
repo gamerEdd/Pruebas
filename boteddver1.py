@@ -68,7 +68,6 @@ from loss_analyzer import LossAnalyzer
 from loss_protection_ai import LossProtectionAI  # ⭐ NUEVO: ML-based loss protection with retraining
 from recovery_based_closer import RecoveryBasedCloser  # ⭐ NUEVO: Cierre dinámico por recuperación
 from feedback_loop_ai import FeedbackLoopAI  # ⭐ NUEVO: Post-trade feedback loop
-from entry_point_ai import EntryPointAI  # <-- agregado
 from adaptive_parameters import AdaptiveParameters
 from data_updater_module import DataUpdater, PreAnalysisDataRefresher
 from data_loader_trainer import DataLoaderTrainer, initialize_data_loader
@@ -1088,14 +1087,6 @@ class MT5AdaptiveTradingBot:
         
         # ⭐ NUEVO: Feedback Loop para retroalimentación post-trade
         self.feedback_loop_ai = FeedbackLoopAI(log_callback=self.add_log)
-
-        # --- NUEVO: Punto de Entrada IA ---
-        self.entry_point_ai = EntryPointAI(log_callback=self.add_log)
-        self.use_entry_point = tk.BooleanVar(value=True)  # ACTIVADO: True
-        self.entry_point_price = tk.DoubleVar(value=0.0)
-        self.entry_point_direction = tk.StringVar(value="BUY")
-        self.entry_point_active = False
-        # --- fin Punto de Entrada ---
         
         # [OBJETIVO] FASE 3: INSTANCIAR 12 NUEVOS ANALIZADORES V12
         self.super_analyzer = SuperAnalyzer(log_callback=self.add_log)
@@ -1286,9 +1277,6 @@ class MT5AdaptiveTradingBot:
         self.operaciones_actuales = set()
         self.operaciones_procesadas = set()
         self.operaciones_cerradas = 0
-        
-        # ⭐ NUEVO: Sistema de Operaciones en Espera
-        self.pending_operations = []  # Lista de operaciones pendientes
         
         # Variables de estado
         self.z = 0
@@ -2795,16 +2783,6 @@ class MT5AdaptiveTradingBot:
         config_tab = tk.Frame(notebook, bg='#1e293b')
         notebook.add(config_tab, text="Configuración")
         
-        # --- NUEVA PESTAÑA: Punto de Entrada ---
-        entry_point_tab = tk.Frame(notebook, bg='#1e293b')
-        notebook.add(entry_point_tab, text="Punto de Entrada")
-        # --- FIN ---
-        
-        # --- NUEVA PESTAÑA: Operaciones en Espera ---
-        pending_ops_tab = tk.Frame(notebook, bg='#1e293b')
-        notebook.add(pending_ops_tab, text="⏳ Operaciones en Espera")
-        # --- FIN ---
-        
         # Panel derecho (Sin cambios)
         right_panel = tk.Frame(main_container, bg='#1e293b')
         right_panel.pack(side='right', fill='both', expand=True, padx=(5, 0))
@@ -2812,8 +2790,6 @@ class MT5AdaptiveTradingBot:
         # Llenar las pestañas
         self.create_control_panel(control_tab)
         self.create_config_panel(config_tab)
-        self.create_entry_point_panel(entry_point_tab)  # <-- nuevo panel
-        self.create_pending_operations_panel(pending_ops_tab)  # <-- nuevo panel operaciones en espera
         self.create_stats_panel(right_panel)
         self.create_future_data_panel(right_panel)  # 📊 Nuevo cuadro para datos futuros
         self.create_events_panel(right_panel)
@@ -3188,12 +3164,6 @@ class MT5AdaptiveTradingBot:
                                  bg='#8b5cf6', fg='white', font=('Arial', 10),
                                  relief='flat', padx=15, pady=8, cursor='hand2')
         reiniciar_btn.pack(side='left', expand=True, fill='x', padx=(5, 5))
-        
-        limpiar_espera_btn = tk.Button(mgmt_btn_frame, text="🗑️ Limpiar Espera", 
-                                      command=self._clear_all_pending,
-                                      bg='#ef4444', fg='white', font=('Arial', 10),
-                                      relief='flat', padx=15, pady=8, cursor='hand2')
-        limpiar_espera_btn.pack(side='left', expand=True, fill='x', padx=(5, 0))
 
         # ⭐ SEGUNDO PANEL DESPLEGABLE: Sistema Multi-IA, Objetivos y Pausas
         self.advanced_panel_expanded = True
@@ -4096,9 +4066,6 @@ class MT5AdaptiveTradingBot:
         while self._entry_analysis_running:
             try:
                 now = time.time()
-                if self.is_running and self.use_entry_point.get() and (now - self._last_entry_check >= 1.0):
-                    self.monitor_entry_point()
-                    self._last_entry_check = now
 
                 if self.is_running and (now - self._last_open_ops_analysis >= 5.0):
                     self.analizar_operaciones_abiertas()
@@ -5183,19 +5150,12 @@ class MT5AdaptiveTradingBot:
                 order_type = force_direction
                 self.rapid_ops_total_opened += 1
             else:
-                # VALIDAR: ¿Está Entry Point activo?
-                use_entry_point = self.use_entry_point.get()
-                if use_entry_point:
-                    # Entry Point activo → usa su dirección fija
-                    direction = mt5.ORDER_TYPE_BUY if self.entry_point_direction.get() == "BUY" else mt5.ORDER_TYPE_SELL
-                    order_type = self.entry_point_direction.get()
-                else:
-                    # Entry Point inactivo → lógica original
-                    # ...existing code (balanceo dinámico y adaptativo)...
-                    buy_abiertos = sum(1 for op in self.rapid_ops_active.values() if op['type'] == 'BUY')
-                    sell_abiertos = sum(1 for op in self.rapid_ops_active.values() if op['type'] == 'SELL')
-                    if self.config.get('RAPID_OPS_USE_AI') and self.config['RAPID_OPS_USE_AI'].get():
-                        try:
+                # Lógica original (sin Entry Point)
+                # ...existing code (balanceo dinámico y adaptativo)...
+                buy_abiertos = sum(1 for op in self.rapid_ops_active.values() if op['type'] == 'BUY')
+                sell_abiertos = sum(1 for op in self.rapid_ops_active.values() if op['type'] == 'SELL')
+                if self.config.get('RAPID_OPS_USE_AI') and self.config['RAPID_OPS_USE_AI'].get():
+                    try:
                             if not getattr(self, 'rapid_initial_phase_done', False):
                                 if buy_abiertos < sell_abiertos:
                                     direction = mt5.ORDER_TYPE_BUY
@@ -5248,20 +5208,20 @@ class MT5AdaptiveTradingBot:
                                         else:
                                             direction = mt5.ORDER_TYPE_SELL
                                             order_type = "SELL"
-                        except Exception:
-                            if buy_abiertos < sell_abiertos:
+                    except Exception:
+                        if buy_abiertos < sell_abiertos:
+                            direction = mt5.ORDER_TYPE_BUY
+                            order_type = "BUY"
+                        elif sell_abiertos < buy_abiertos:
+                            direction = mt5.ORDER_TYPE_SELL
+                            order_type = "SELL"
+                        else:
+                            if self.rapid_ops_total_opened % 2 == 0:
                                 direction = mt5.ORDER_TYPE_BUY
                                 order_type = "BUY"
-                            elif sell_abiertos < buy_abiertos:
+                            else:
                                 direction = mt5.ORDER_TYPE_SELL
                                 order_type = "SELL"
-                            else:
-                                if self.rapid_ops_total_opened % 2 == 0:
-                                    direction = mt5.ORDER_TYPE_BUY
-                                    order_type = "BUY"
-                                else:
-                                    direction = mt5.ORDER_TYPE_SELL
-                                    order_type = "SELL"
                     else:
                         if buy_abiertos < sell_abiertos:
                             direction = mt5.ORDER_TYPE_BUY
@@ -6852,14 +6812,8 @@ class MT5AdaptiveTradingBot:
                 self.root.after(0, self.actualizar_tiempo)
             
             # ⭐ Verificar modo de operación
-            if self.use_entry_point.get() and self.entry_point_active:
-                mode = "Modo PUNTO DE ENTRADA"
-                self.add_log(f"🌟 Bot iniciado en {mode}", 'success')
-                self.add_log(f"   Esperando precio: {self.entry_point_price.get()}", 'info')
-                self.add_log(f"   Dirección: {self.entry_point_direction.get()}", 'info')
-            else:
-                mode = "Sistema Multi-IA" if self.use_multi_ai.get() else "Modo Tradicional"
-                self.add_log(f"Bot iniciado - {mode}", 'info')
+            mode = "Sistema Multi-IA" if self.use_multi_ai.get() else "Modo Tradicional"
+            self.add_log(f"Bot iniciado - {mode}", 'info')
             
             # ⭐ VALIDACIÓN DE OPERACIONES EN ESPERA
             if self.pending_operations:
@@ -7058,17 +7012,8 @@ class MT5AdaptiveTradingBot:
                             adx=25   # Placeholder
                         )
                     
-                    # ⭐ MODO PUNTO DE ENTRADA: Solo monitorear operaciones en espera
-                    if self.use_entry_point.get():
-                        # Primero: Analizar y ABRIR nuevas operaciones en espera
-                        self.analizar_pending_operations()
-                        
-                        # Segundo: Monitorear TP/SL de posiciones abiertas
-                        if self.total_operaciones_abiertas > 0:
-                            self.monitorear_posiciones_en_rojo()
-                            self.limpiar_tracking_posiciones_cerradas()
-                        
-                        time.sleep(0.05)  # ⭐ ULTRA-OPTIMIZADO: 50ms - apertura instantánea
+                    # Lógica principal de trading
+                    if self.total_operaciones_abiertas > 0:
                         continue
 
                     # MODO NORMAL (resto del código sin cambios)
@@ -9393,17 +9338,6 @@ class MT5AdaptiveTradingBot:
         self.add_log("\n" + "="*60, 'warning')
         self.add_log("[IA] INICIANDO BOT - VALIDACIÓN INICIAL", 'warning')
         self.add_log("="*60, 'warning')
-        
-        # Verificar si Punto de Entrada está activado
-        if self.use_entry_point.get():
-            entry_price = self.entry_point_price.get()
-            entry_direction = self.entry_point_direction.get()
-            self.add_log(f"\n[OBJETIVO] PUNTO DE ENTRADA ACTIVADO", 'success')
-            self.add_log(f"   Dirección: {entry_direction}", 'info')
-            self.add_log(f"   Precio Objetivo: {entry_price}", 'info')
-            self.add_log(f"   Estado: Monitoreando hasta alcanzar precio...\n", 'success')
-        else:
-            self.add_log(f"\n[CONFIG]  Punto de Entrada: DESACTIVADO\n", 'info')
         
         # Verificar si hay operaciones en espera
         if self.pending_operations:
@@ -11948,132 +11882,12 @@ class MT5AdaptiveTradingBot:
         self.entry_current_price_label.pack(fill='x', pady=2)
 
     def create_pending_operations_panel(self, parent):
-        """Panel para mostrar operaciones en espera"""
-        panel = tk.LabelFrame(parent, text="Operaciones en Espera", 
-                              bg='#2d3e50', fg='#f1f5f9',
-                              font=('Arial', 11, 'bold'), padx=10, pady=10)
-        panel.pack(fill='both', expand=True, padx=10, pady=10)
-
-        # Frame para la lista de operaciones
-        list_frame = tk.Frame(panel, bg='#1e293b', relief='solid', borderwidth=1)
-        list_frame.pack(fill='both', expand=True, pady=(0, 10))
-
-        # Listbox con scrollbar
-        scrollbar = tk.Scrollbar(list_frame, orient='vertical')
-        scrollbar.pack(side='right', fill='y')
-
-        self.pending_ops_listbox = tk.Listbox(list_frame, 
-                                              bg='#334155', fg='#e2e8f0',
-                                              font=('Consolas', 9),
-                                              yscrollcommand=scrollbar.set,
-                                              relief='flat', borderwidth=0,
-                                              activestyle='none')
-        self.pending_ops_listbox.pack(side='left', fill='both', expand=True, padx=5, pady=5)
-        scrollbar.config(command=self.pending_ops_listbox.yview)
-
-        # Frame para botones
-        btn_frame = tk.Frame(panel, bg='#2d3e50')
-        btn_frame.pack(fill='x', pady=(5, 0))
-
-        tk.Button(btn_frame, text="[ACTUALIZAR] Actualizar", 
-                 command=self.actualizar_lista_operaciones,
-                 bg='#3b82f6', fg='white', font=('Arial', 9),
-                 relief='flat', padx=10, pady=5, cursor='hand2').pack(side='left', padx=5)
-
-        tk.Button(btn_frame, text="[ERROR] Limpiar Espera", 
-                 command=self.limpiar_operaciones_espera,
-                 bg='#ef4444', fg='white', font=('Arial', 9),
-                 relief='flat', padx=10, pady=5, cursor='hand2').pack(side='left', padx=5)
-
-        # Etiqueta de estado
-        self.pending_ops_status = tk.Label(btn_frame, text="Sin operaciones en espera", 
-                                          bg='#2d3e50', fg='#cbd5e1', font=('Arial', 9))
-        self.pending_ops_status.pack(side='left', padx=10, fill='x', expand=True)
+        """Panel para gestionar operaciones en espera (DESHABILITADO)"""
+        pass
 
     def create_pending_operations_panel(self, parent):
-        """Panel para gestionar operaciones en espera"""
-        main_frame = tk.Frame(parent, bg='#1e293b')
-        main_frame.pack(fill='both', expand=True, padx=10, pady=10)
-
-        # Título
-        title_frame = tk.Frame(main_frame, bg='#1e293b')
-        title_frame.pack(fill='x', pady=(0, 10))
-
-        tk.Label(title_frame, text="[ESPERA] Operaciones en Espera", bg='#1e293b', fg='#fbbf24',
-                font=('Arial', 12, 'bold')).pack(side='left')
-
-        # Frame con scroll para operaciones
-        list_frame = tk.LabelFrame(main_frame, text="📋 Listado de Operaciones", 
-                                  bg='#2d3e50', fg='#f1f5f9',
-                                  font=('Arial', 10, 'bold'), padx=5, pady=5)
-        list_frame.pack(fill='both', expand=True, pady=(0, 10))
-
-        # Listbox con scrollbar
-        scrollbar = tk.Scrollbar(list_frame)
-        scrollbar.pack(side='right', fill='y')
-
-        self.pending_ops_listbox = tk.Listbox(list_frame, bg='#1e293b', fg='#cbd5e1',
-                                             yscrollcommand=scrollbar.set, 
-                                             font=('Arial', 9), height=8)
-        self.pending_ops_listbox.pack(fill='both', expand=True)
-        scrollbar.config(command=self.pending_ops_listbox.yview)
-        
-        # Bind para ver detalles al hacer clic
-        self.pending_ops_listbox.bind('<<ListboxSelect>>', self._on_pending_op_select)
-
-        # Frame de detalles
-        details_frame = tk.LabelFrame(main_frame, text="📊 Detalles de Operación Seleccionada", 
-                                     bg='#2d3e50', fg='#f1f5f9',
-                                     font=('Arial', 10, 'bold'), padx=10, pady=10)
-        details_frame.pack(fill='x', pady=(0, 10))
-
-        self.pending_op_details = tk.Label(details_frame, text="Selecciona una operación para ver detalles",
-                                          bg='#2d3e50', fg='#94a3b8', justify='left',
-                                          font=('Arial', 9), wraplength=400)
-        self.pending_op_details.pack(fill='x')
-
-        # Frame de análisis en tiempo real
-        analysis_frame = tk.LabelFrame(main_frame, text="📈 Analizador de Apertura", 
-                                      bg='#2d3e50', fg='#f1f5f9',
-                                      font=('Arial', 10, 'bold'), padx=10, pady=10)
-        analysis_frame.pack(fill='x', pady=(0, 10))
-
-        self.pending_analyzer_text = tk.Label(analysis_frame, text="Sin operaciones en espera para analizar",
-                                             bg='#2d3e50', fg='#cbd5e1', justify='left',
-                                             font=('Arial', 9), wraplength=400)
-        self.pending_analyzer_text.pack(fill='x')
-
-        # Frame de botones de acción
-        btn_frame = tk.Frame(main_frame, bg='#1e293b')
-        btn_frame.pack(fill='x')
-
-        tk.Button(btn_frame, text="🗑️ Eliminar Seleccionada", 
-                 command=self._delete_selected_pending_op,
-                 bg='#ef4444', fg='white', font=('Arial', 9, 'bold'),
-                 relief='flat', padx=10, pady=5, cursor='hand2').pack(side='left', padx=5)
-
-        tk.Button(btn_frame, text="[ACTUALIZAR] Actualizar Análisis", 
-                 command=self._update_pending_analysis,
-                 bg='#3b82f6', fg='white', font=('Arial', 9, 'bold'),
-                 relief='flat', padx=10, pady=5, cursor='hand2').pack(side='left', padx=5)
-
-        tk.Button(btn_frame, text="[OK] Abrir Manual", 
-                 command=self._manual_open_pending,
-                 bg='#10b981', fg='white', font=('Arial', 9, 'bold'),
-                 relief='flat', padx=10, pady=5, cursor='hand2').pack(side='left', padx=5)
-
-        tk.Button(btn_frame, text="📋Limpiar Todo", 
-                 command=self._clear_all_pending,
-                 bg='#6b7280', fg='white', font=('Arial', 9, 'bold'),
-                 relief='flat', padx=10, pady=5, cursor='hand2').pack(side='left', padx=5)
-
-        # Status
-        self.pending_ops_status = tk.Label(btn_frame, text="Sin operaciones en espera", 
-                                          bg='#1e293b', fg='#cbd5e1', font=('Arial', 9))
-        self.pending_ops_status.pack(side='left', padx=10, fill='x', expand=True)
-
-        # Inicializar lista
-        self.actualizar_lista_operaciones()
+        """Panel para gestionar operaciones en espera (DESHABILITADO)"""
+        pass
 
     def actualizar_lista_operaciones(self):
         """Actualiza la lista de operaciones en espera"""
@@ -12288,17 +12102,8 @@ Se abrirá al precio actual de mercado."""
                 messagebox.showerror("Error", "No se pudo abrir la operación")
 
     def _clear_all_pending(self):
-        """Limpia todas las operaciones en espera"""
-        if not self.pending_operations:
-            messagebox.showinfo("Vacío", "No hay operaciones en espera")
-            return
-        
-        if messagebox.askyesno("Confirmar", f"¿Eliminar todas las {len(self.pending_operations)} operaciones en espera?"):
-            count = len(self.pending_operations)
-            self.pending_operations = []
-            self.actualizar_lista_operaciones()
-            self.add_log(f"Se eliminaron {count} operaciones en espera", 'warning')
-            messagebox.showinfo("Limpiadas", f"{count} operaciones eliminadas")
+        """Limpia todas las operaciones en espera (DESHABILITADO)"""
+        pass
 
     def analizar_pending_operations(self):
         """Analiza todas las operaciones en espera y verifica condiciones"""
@@ -12347,7 +12152,7 @@ Se abrirá al precio actual de mercado."""
             
             # ⭐ PERMITIR MÚLTIPLES OPERACIONES SIMULTÁNEAMENTE
             max_ops = self.config['MAX_SIMULTANEOUS_OPS'].get()
-            if should_open and self.use_entry_point.get() and self.total_operaciones_abiertas < max_ops:
+            if should_open and self.total_operaciones_abiertas < max_ops:
                 self.add_log(f"\n[OBJETIVO] ¡OPERACIÓN EN ESPERA #{op['id']} ACTIVADA!", 'success')
                 self.add_log(f"   Dirección: {direction}", 'success')
                 self.add_log(f"   Precio Objetivo: {target_price:.5f}", 'success')

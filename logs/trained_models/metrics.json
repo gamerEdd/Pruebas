@@ -1,8 +1,0 @@
-{
-  "walk_forward_buy": 0.5879999999999999,
-  "walk_forward_sell": 0.5546666666666666,
-  "logistic_buy": 0.6180904522613065,
-  "logistic_sell": 0.5728643216080402,
-  "xgboost_buy": 0.6130653266331658,
-  "xgboost_sell": 0.5477386934673367
-}
