@@ -68,7 +68,6 @@ from loss_analyzer import LossAnalyzer
 from loss_protection_ai import LossProtectionAI  # ⭐ NUEVO: ML-based loss protection with retraining
 from recovery_based_closer import RecoveryBasedCloser  # ⭐ NUEVO: Cierre dinámico por recuperación
 from feedback_loop_ai import FeedbackLoopAI  # ⭐ NUEVO: Post-trade feedback loop
-from rapid_ops_validator import RapidOpsValidator  # ⭐ NUEVO: Smart context validation for rapid ops
 from entry_point_ai import EntryPointAI  # <-- agregado
 from adaptive_parameters import AdaptiveParameters
 from data_updater_module import DataUpdater, PreAnalysisDataRefresher
@@ -129,7 +128,7 @@ except Exception:
     logging.basicConfig(level=logging.WARNING, format='%(asctime)s %(levelname)s %(name)s: %(message)s')
 
 # ⭐ SUPRIMIR LOGS DE TERCEROS: Desactivar todos los loggers de módulos importados
-for logger_name in ['loss_analyzer', 'loss_protection_ai', 'feedback_loop_ai', 'rapid_ops_validator', 
+for logger_name in ['loss_analyzer', 'loss_protection_ai', 'feedback_loop_ai', 
                      'data_loader_trainer', 'adaptive_parameters', 'decision_arbitrator_ai', 
                      'buy_specialist_ai', 'sell_specialist_ai', 'multi_timeframe_analyzer',
                      'micro_momentum_engine_v2', 'dataset_learning_engine', 'neural_network_predictor']:
@@ -307,27 +306,8 @@ class MT5AdaptiveTradingBot:
             return {'buy_win': 0, 'buy_loss': 0, 'sell_win': 0, 'sell_loss': 0}
 
     def get_rapid_ops_snapshot(self):
-        """⭐ NUEVO: Devuelve snapshot de rapid_ops counters de forma thread-safe."""
-        try:
-            if self.rapid_ops_lock:
-                with self.rapid_ops_lock:
-                    return {
-                        'total_opened': self.rapid_ops_total_opened,
-                        'buy_count': self.rapid_ops_buy_count,
-                        'sell_count': self.rapid_ops_sell_count,
-                        'total_profit': self.rapid_ops_total_profit,
-                        'active_count': len(self.rapid_ops_active)
-                    }
-            else:
-                return {
-                    'total_opened': self.rapid_ops_total_opened,
-                    'buy_count': self.rapid_ops_buy_count,
-                    'sell_count': self.rapid_ops_sell_count,
-                    'total_profit': self.rapid_ops_total_profit,
-                    'active_count': len(self.rapid_ops_active)
-                }
-        except Exception:
-            return {'total_opened': 0, 'buy_count': 0, 'sell_count': 0, 'total_profit': 0.0, 'active_count': 0}
+        """Eliminada - Operaciones Rápidas fueron removidas"""
+        return {'total_opened': 0, 'buy_count': 0, 'sell_count': 0, 'total_profit': 0.0, 'active_count': 0}
 
     def get_ghost_recommendation(self):
         """Devuelve 'BUY', 'SELL' o 'HOLD' según winrate fantasma últimos 30s"""
@@ -908,8 +888,8 @@ class MT5AdaptiveTradingBot:
         now = time.time()
         symbol = self.config['SYMBOL'].get()
         # SIEMPRE usar TP/SL global
-        tp_amount = self.config['RAPID_OPS_TP'].get()
-        sl_amount = self.config['RAPID_OPS_SL'].get()
+        tp_amount = self.config['TP_DIFF'].get()
+        sl_amount = self.config['SL_DIFF'].get()
         min_profit = self.config['MIN_PROFIT_CLOSE'].get()
         volume = self.config['VOL'].get()
         for typ in ['buy', 'sell']:
@@ -1109,9 +1089,6 @@ class MT5AdaptiveTradingBot:
         # ⭐ NUEVO: Feedback Loop para retroalimentación post-trade
         self.feedback_loop_ai = FeedbackLoopAI(log_callback=self.add_log)
 
-        # ⭐ NUEVO: Rapid Operations intelligent validator
-        self.rapid_ops_validator = RapidOpsValidator(log_callback=self.add_log)
-
         # --- NUEVO: Punto de Entrada IA ---
         self.entry_point_ai = EntryPointAI(log_callback=self.add_log)
         self.use_entry_point = tk.BooleanVar(value=True)  # ACTIVADO: True
@@ -1226,35 +1203,11 @@ class MT5AdaptiveTradingBot:
             'ALLOW_BUY': tk.BooleanVar(value=True),  # Permitir abrir operaciones BUY
             'ALLOW_SELL': tk.BooleanVar(value=True),  # Permitir abrir operaciones SELL
              
-             # 🚀 OPERACIONES RÁPIDAS - Solo flag de activación + intervalo
-             'RAPID_OPS_ENABLED': tk.BooleanVar(value=False),
-             'RAPID_OPS_INTERVAL': tk.IntVar(value=5),  # Intervalo en segundos entre operaciones
-             'RAPID_OPS_USE_SL_TP': tk.BooleanVar(value=True),  # Habilitar SL/TP (SIEMPRE ACTIVO)
-             # Parámetros adaptativos IA - sensibilidad y ventana
-             'RAPID_OPS_ADAPT_SCALE': tk.DoubleVar(value=100.0),
-             'RAPID_OPS_ADAPT_ALPHA': tk.DoubleVar(value=0.35),  # rapidez de adaptación (0-1)
-             'RAPID_OPS_TIME_DECAY': tk.IntVar(value=600),  # segundos para decaimiento temporal (peso reciente)
-             'RAPID_OPS_INITIAL_PHASE': tk.IntVar(value=60),  # duración de fase inicial en segundos (1m)
-             'RAPID_OPS_ADAPT_MIN_SAMPLES': tk.IntVar(value=6),
-             'RAPID_OPS_HISTORY_SIZE': tk.IntVar(value=200),
-             'RAPID_OPS_LOG_THRESHOLD': tk.DoubleVar(value=0.01),
-             'RAPID_OPS_FRAC_COLOR': tk.StringVar(value='#f59e0b'),
-             # Opciones de IA para Operaciones Rápidas
-             'RAPID_OPS_USE_AI': tk.BooleanVar(value=True),
-             'RAPID_OPS_AI_MODE': tk.StringVar(value='ARBITRATOR'),  # ARBITRATOR / BUY / SELL / ENTRYPOINT
-                             'RAPID_OPS_ANALYZE_WINDOW': tk.IntVar(value=5),  # segundos para análisis previo a apertura
-                         'SNAPSHOT_RELOAD_INTERVAL': tk.IntVar(value=30),  # ⭐ 30 segundos para evitar I/O sobrecarga
-             'RAPID_OPS_OPEN_OPPOSITE_ON_SLTP': tk.BooleanVar(value=False),  # Abrir operación contraria tras cierre por SL/TP
-             'RAPID_OPS_OPEN_OPPOSITE_ON_WIN': tk.BooleanVar(value=False),  # Abrir operación contraria si la otra dirección está ganando
-             # Protección avanzada de reversión/pérdidas en rápidas
-             'RAPID_OPS_MAX_DIRECTION_LOSS_STREAK': tk.IntVar(value=3),
-             'RAPID_OPS_REVERSAL_CLOSE_ENABLED': tk.BooleanVar(value=True),
-             'RAPID_OPS_REVERSAL_LOSS_TRIGGER': tk.DoubleVar(value=0.6),  # Multiplicador de RAPID_OPS_SL
-             
              # ⭐ NUEVO: Margen de Ganancia (objetivo automático)
              'MARGEN_GANANCIA': tk.DoubleVar(value=0.0),  # En porcentaje (1%, 2%, 3%, etc.)
              'OBJETIVO_NETO': tk.DoubleVar(value=2.0),  # Valor neto objetivo (ej: 160) - 0 desactiva
-               'SPECIALIST_DEBUG_LOGS': tk.BooleanVar(value=False),  # Logs detallados de especialistas
+             'SPECIALIST_DEBUG_LOGS': tk.BooleanVar(value=False),  # Logs detallados de especialistas
+             'SNAPSHOT_RELOAD_INTERVAL': tk.IntVar(value=30),  # Intervalo recarga snapshots (segundos)
         }
         # Cargar snapshots de mercado existentes en memoria (si existen) usando reload (con logging)
         try:
@@ -1285,34 +1238,6 @@ class MT5AdaptiveTradingBot:
         except Exception:
             pass
         
-        # 🚀 OPERACIONES RÁPIDAS - Variables de estado
-        self.rapid_ops_active = {}  # dict: {ticket: {type, entry_price, open_time}}
-        self.rapid_ops_total_opened = 0  # Contador PERMANENTE que nunca baja (para 50/50)
-        self.rapid_ops_buy_count = 0
-        self.rapid_ops_sell_count = 0
-        self.rapid_ops_total_profit = 0.0  # Acumula ganancias/pérdidas totales
-        self.rapid_ops_thread = None
-        self.rapid_ops_running = False
-        self.last_rapid_op_time = 0
-        # Historial para adaptar distribución (lista de dicts: {'type','profit','time'})
-        hist_size = int(self._safe_get('RAPID_OPS_HISTORY_SIZE', 200)) if hasattr(self, 'config') else 200
-        hist_size = min(hist_size, 200)  # ⭐ CAP máximo a 200 para evitar memory leak de rapid ops
-        self.rapid_ops_history = deque(maxlen=hist_size)
-        # Lock para sincronizar acceso al historial de rápidas
-        try:
-            self.rapid_ops_lock = threading.Lock()
-        except Exception:
-            self.rapid_ops_lock = None
-        # Última fracción BUY conocida (para logs/monitor)
-        self.last_buy_frac = None
-        # Valor suavizado de fracción BUY para respuestas rápidas y estabilidad
-        self.rapid_buy_frac_smoothed = None
-        # Inicio y fase inicial para IA adaptativa
-        self.rapid_ops_start_time = 0
-        self.rapid_initial_phase_done = False
-        self.rapid_target_buy_frac = 0.5
-        self.rapid_reverse_cooldown_until = 0.0
-        self.directional_trade_history = deque(maxlen=200)
         # Lock para sincronizar acceso a market_snapshots en múltiples hilos
         try:
             self.market_snapshots_lock = threading.Lock()
@@ -2880,11 +2805,6 @@ class MT5AdaptiveTradingBot:
         notebook.add(pending_ops_tab, text="⏳ Operaciones en Espera")
         # --- FIN ---
         
-        # --- NUEVA PESTAÑA: Operaciones Rápidas ---
-        rapid_ops_tab = tk.Frame(notebook, bg='#1e293b')
-        notebook.add(rapid_ops_tab, text="🚀 Operaciones Rápidas")
-        # --- FIN ---
-        
         # Panel derecho (Sin cambios)
         right_panel = tk.Frame(main_container, bg='#1e293b')
         right_panel.pack(side='right', fill='both', expand=True, padx=(5, 0))
@@ -2894,7 +2814,6 @@ class MT5AdaptiveTradingBot:
         self.create_config_panel(config_tab)
         self.create_entry_point_panel(entry_point_tab)  # <-- nuevo panel
         self.create_pending_operations_panel(pending_ops_tab)  # <-- nuevo panel operaciones en espera
-        self.create_rapid_operations_panel(rapid_ops_tab)  # <-- nuevo panel operaciones rápidas
         self.create_stats_panel(right_panel)
         self.create_future_data_panel(right_panel)  # 📊 Nuevo cuadro para datos futuros
         self.create_events_panel(right_panel)
@@ -4189,101 +4108,12 @@ class MT5AdaptiveTradingBot:
             time.sleep(0.25)
 
     def _compute_rapid_ops_distribution(self, min_samples=6):
-        """
-        Implementación optimizada y estable: pondera profit por recencia con decaimiento
-        temporal, mezcla información de profit y conteos ponderados, y aplica
-        suavizado exponencial entre invocaciones para velocidad y estabilidad.
-        """
-
-        try:
-            scale = float(self._safe_get('RAPID_OPS_ADAPT_SCALE', 100.0))
-            min_samples = int(self._safe_get('RAPID_OPS_ADAPT_MIN_SAMPLES', 6))
-            log_threshold = float(self._safe_get('RAPID_OPS_LOG_THRESHOLD', 0.01))
-            alpha = float(self._safe_get('RAPID_OPS_ADAPT_ALPHA', 0.35))
-            decay = int(self._safe_get('RAPID_OPS_TIME_DECAY', 600))
-
-            # Combinar historial de operaciones reales y fantasma
-            history_real = list(self.rapid_ops_history)
-            history_ghost = list(self.ghost_ops_history) if hasattr(self, 'ghost_ops_history') else []
-            history = history_real + history_ghost
-            if len(history) < min_samples:
-                buy_frac_raw = 0.5
-            else:
-                now = datetime.now()
-                buy_score = sell_score = buy_weight = sell_weight = 0.0
-                # recorrer historial (es pequeño por diseño) y acumular con peso temporal
-                for item in history:
-                    try:
-                        age = (now - item.get('time', now)).total_seconds() if 'time' in item else 0.0
-                    except Exception:
-                        age = 0.0
-                    w = math.exp(-age / float(decay)) if decay > 0 else 1.0
-                    if item.get('type') == 'BUY':
-                        buy_score += float(item.get('profit', 0.0)) * w
-                        buy_weight += w
-                    else:
-                        sell_score += float(item.get('profit', 0.0)) * w
-                        sell_weight += w
-
-                profit_diff = buy_score - sell_score
-                denom = abs(buy_score) + abs(sell_score) + scale
-                profit_ratio = profit_diff / denom if denom != 0 else 0.0
-
-                cnt_ratio = 0.0
-                cnt_sum = buy_weight + sell_weight
-                if cnt_sum > 0:
-                    cnt_ratio = (buy_weight - sell_weight) / cnt_sum
-
-                raw = 0.75 * profit_ratio + 0.25 * cnt_ratio
-                buy_frac_raw = 0.5 + raw * 0.45
-                buy_frac_raw = max(0.2, min(0.8, buy_frac_raw))
-
-            # Suavizado exponencial para estabilidad y respuesta controlada
-            if self.rapid_buy_frac_smoothed is None:
-                self.rapid_buy_frac_smoothed = buy_frac_raw
-            else:
-                self.rapid_buy_frac_smoothed = (1.0 - alpha) * self.rapid_buy_frac_smoothed + alpha * buy_frac_raw
-
-            buy_frac = self.rapid_buy_frac_smoothed
-
-            # Log y actualización UI solo si hay cambio relevante
-            try:
-                if self.last_buy_frac is None or abs(buy_frac - self.last_buy_frac) >= log_threshold:
-                    self.last_buy_frac = buy_frac
-                    try:
-                        last = history[-min(len(history), min_samples * 4):]
-                        buy_total = sum(item.get('profit', 0.0) for item in last if item.get('type') == 'BUY')
-                        sell_total = sum(item.get('profit', 0.0) for item in last if item.get('type') == 'SELL')
-                        self.add_log(f"🤖 IA adaptativa: BUY_frac {buy_frac:.2f} | buy_total=${buy_total:.2f} sell_total=${sell_total:.2f}", 'info')
-                    except Exception:
-                        self.add_log(f"🤖 IA adaptativa: BUY_frac {buy_frac:.2f}", 'info')
-
-                    try:
-                        color = self.config.get('RAPID_OPS_FRAC_COLOR').get() if 'RAPID_OPS_FRAC_COLOR' in self.config else '#f59e0b'
-                        self._run_on_ui_thread(self._apply_rapid_buy_frac_ui, int(buy_frac * 100), color)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-
-            return buy_frac
-        except Exception:
-            return 0.5
+        """Eliminada - Operaciones Rápidas fueron removidas"""
+        return 0.5
 
     def _apply_rapid_buy_frac_ui(self, buy_pct, color):
-        """Actualiza los widgets de fracción BUY de rápidas en el hilo UI."""
-        try:
-            if hasattr(self, 'rapid_buy_frac_label'):
-                self.rapid_buy_frac_label.config(text=f"{int(buy_pct)}%", fg=color)
-            if hasattr(self, 'rapid_buy_frac_bar'):
-                try:
-                    style = ttk.Style(self.root)
-                    style.configure('Rapid.Horizontal.TProgressbar', background=color)
-                except Exception:
-                    pass
-                self.rapid_buy_frac_bar['value'] = int(buy_pct)
-        except Exception:
-            pass
+        """Eliminada - Operaciones Rápidas fueron removidas"""
+        pass
 
     def analizar_operaciones_abiertas(self):
         """⭐ NUEVO: Analizador de operaciones abiertas en tiempo real"""
@@ -4748,198 +4578,6 @@ class MT5AdaptiveTradingBot:
         except Exception as e:
             self.add_log(f"Error actualizando interfaz: {str(e)}", 'error')
 
-    def create_rapid_operations_panel(self, parent):
-        """🚀 Panel para Operaciones Rápidas - Checkbox + Intervalo"""
-        main_frame = tk.Frame(parent, bg='#1e293b')
-        main_frame.pack(fill='both', expand=True, padx=10, pady=10)
-
-        # ===== CONTROL SIMPLE =====
-        control_frame = tk.LabelFrame(main_frame, text="🚀 Operaciones Rápidas", 
-                                     bg='#2d3e50', fg='#f1f5f9',
-                                     font=('Arial', 12, 'bold'), padx=10, pady=10)
-        control_frame.pack(fill='x', pady=10)
-
-        # Fila 1: Checkbox
-        row1 = tk.Frame(control_frame, bg='#2d3e50')
-        row1.pack(fill='x', pady=5)
-        
-        tk.Checkbutton(row1, text="✅️ Activar Operaciones Rápidas Automáticas", 
-                      variable=self.config['RAPID_OPS_ENABLED'],
-                      bg='#2d3e50', fg='#4ade80', font=('Arial', 11, 'bold'),
-                      selectcolor='#1e293b', command=self.on_rapid_ops_toggle).pack(side='left', padx=10, pady=5)
-
-        # Fila 2: Intervalo
-        row2 = tk.Frame(control_frame, bg='#2d3e50')
-        row2.pack(fill='x', pady=5)
-        
-        tk.Label(row2, text="Intervalo (seg):", bg='#2d3e50', fg='#cbd5e1', font=('Arial', 10)).pack(side='left', padx=10)
-        
-        tk.Spinbox(row2, from_=1, to=300, textvariable=self.config['RAPID_OPS_INTERVAL'],
-                  bg='#1e293b', fg='#60a5fa', font=('Arial', 10), width=5,
-                  relief='flat', borderwidth=1).pack(side='left', padx=5)
-        
-        tk.Label(row2, text="(Abre operaciones cada X segundos sin análisis)", 
-                bg='#2d3e50', fg='#94a3b8', font=('Arial', 9)).pack(side='left', padx=10)
-
-        # Fila 3: SL/TP (usa TP_DIFF y SL_DIFF de la GUI, adaptados automáticamente por volumen)
-        row3 = tk.Frame(control_frame, bg='#2d3e50')
-        row3.pack(fill='x', pady=5)
-        
-        tk.Checkbutton(row3, text="🌟 Usar SL/TP", 
-                      variable=self.config['RAPID_OPS_USE_SL_TP'],
-                      bg='#2d3e50', fg='#f87171', font=('Arial', 10),
-                      selectcolor='#1e293b').pack(side='left', padx=10)
-        
-        tk.Label(row3, text="SL ($):", bg='#2d3e50', fg='#cbd5e1', font=('Arial', 9)).pack(side='left', padx=10)
-        tk.Spinbox(row3, from_=0.01, to=100, textvariable=self.config['SL_DIFF'],
-                  bg='#1e293b', fg='#f87171', font=('Arial', 9), width=5,
-                  relief='flat', borderwidth=1, format="%.2f").pack(side='left', padx=2)
-        
-        tk.Label(row3, text="TP ($):", bg='#2d3e50', fg='#cbd5e1', font=('Arial', 9)).pack(side='left', padx=10)
-        tk.Spinbox(row3, from_=0.01, to=100, textvariable=self.config['TP_DIFF'],
-                  bg='#1e293b', fg='#86efac', font=('Arial', 9), width=5,
-                  relief='flat', borderwidth=1, format="%.2f").pack(side='left', padx=2)
-
-        # Opción: abrir la operación contraria automáticamente tras cierre por SL/TP
-        row4 = tk.Frame(control_frame, bg='#2d3e50')
-        row4.pack(fill='x', pady=5)
-        tk.Checkbutton(row4, text="↺ Abrir contraria tras cierre SL/TP",
-                      variable=self.config['RAPID_OPS_OPEN_OPPOSITE_ON_SLTP'],
-                      bg='#2d3e50', fg='#c7d2fe', font=('Arial', 9),
-                      selectcolor='#1e293b').pack(side='left', padx=12)
-
-        # Opción: abrir la operación contraria si la otra dirección está ganando
-        tk.Checkbutton(row4, text="↺ Abrir contraria si la otra está ganando",
-                  variable=self.config['RAPID_OPS_OPEN_OPPOSITE_ON_WIN'],
-                  bg='#2d3e50', fg='#c7d2fe', font=('Arial', 9),
-                  selectcolor='#1e293b').pack(side='left', padx=12)
-
-        # IA integrada automática: la dirección es determinada por la IA adaptativa.
-
-        # ===== INFORMACIÓN =====
-        info_frame = tk.LabelFrame(main_frame, text="📋 Configuración Activa", 
-                                  bg='#2d3e50', fg='#f1f5f9',
-                                  font=('Arial', 10, 'bold'), padx=10, pady=10)
-        info_frame.pack(fill='x', pady=10)
-
-        info_text = tk.Frame(info_frame, bg='#2d3e50')
-        info_text.pack(fill='x')
-        
-        tk.Label(info_text, 
-                text="• Sin análisis - abre directamente cada X segundos\n"
-                     "• Si 'Punto de Entrada' activo → usa su dirección fija\n"
-                     "• Si 'Punto de Entrada' inactivo → mitad BUY + mitad SELL\n"
-                     "• Cierra automáticamente cuando ganancia ≥ MIN_PROFIT_CLOSE\n"
-                     "• Usa SYMBOL, VOLUMEN y MAX_OPS de Configuración",
-                bg='#2d3e50', fg='#cbd5e1', font=('Arial', 9), justify='left').pack(side='left', padx=10)
-
-        # ===== ESTADO EN TIEMPO REAL =====
-        status_frame = tk.LabelFrame(main_frame, text="📊 Estado Actual", 
-                                    bg='#2d3e50', fg='#f1f5f9',
-                                    font=('Arial', 10, 'bold'), padx=10, pady=10)
-        status_frame.pack(fill='x')
-
-        self.rapid_ops_status = tk.Label(status_frame, 
-                                        text="🔴 INACTIVO", 
-                                        bg='#2d3e50', fg='#fbbf24', font=('Arial', 11, 'bold'))
-        self.rapid_ops_status.pack(side='left', padx=5, pady=5)
-
-        self.rapid_ops_counter = tk.Label(status_frame, 
-                                         text="Operaciones: 0 | BUY: 0 | SELL: 0", 
-                                         bg='#2d3e50', fg='#cbd5e1', font=('Arial', 9))
-        self.rapid_ops_counter.pack(side='left', padx=20, pady=5)
-        
-        # (Se reservará un espacio para la cuenta atrás debajo de Balance/Patrimonio)
-
-
-        # Balance y Patrimonio específicos de Operaciones Rápidas (debajo del estado)
-        rapid_account_frame = tk.Frame(main_frame, bg='#1e293b')
-        rapid_account_frame.pack(fill='x', pady=(5, 0))
-
-        tk.Label(rapid_account_frame, text="Balance:", bg='#1e293b', fg='#cbd5e1').pack(side='left', padx=(10,5))
-        self.rapid_balance_label = tk.Label(rapid_account_frame, text="$0.00", bg='#1e293b', fg='#60a5fa', font=('Arial', 10, 'bold'))
-        self.rapid_balance_label.pack(side='left', padx=(0,15))
-        tk.Label(rapid_account_frame, text="Inicial:", bg='#1e293b', fg='#cbd5e1').pack(side='left', padx=(0,5))
-        self.rapid_initial_balance_label = tk.Label(rapid_account_frame, text="$0.00", bg='#1e293b', fg='#fbbf24', font=('Arial', 10, 'bold'))
-        self.rapid_initial_balance_label.pack(side='left', padx=(0,15))
-
-        tk.Label(rapid_account_frame, text="Patrimonio:", bg='#1e293b', fg='#cbd5e1').pack(side='left', padx=(0,5))
-        self.rapid_equity_label = tk.Label(rapid_account_frame, text="$0.00", bg='#1e293b', fg='#34d399', font=('Arial', 10, 'bold'))
-        self.rapid_equity_label.pack(side='left')
-
-        # --- Campo de GANANCIA objetivo debajo de SL/TP ---
-        # Buscar el frame donde se configuran SL/TP (usualmente cerca de la config de rápidas)
-        # Si no existe, crear uno aquí provisionalmente
-        rapid_sl_frame = tk.Frame(main_frame, bg='#1e293b')
-        rapid_sl_frame.pack(fill='x', pady=(2, 0))
-
-        # SL/TP ya debe estar en la UI, aquí solo agregamos el campo de ganancia objetivo
-        tk.Label(rapid_sl_frame, text="Ganancia objetivo:", bg='#1e293b', fg='#cbd5e1').pack(side='left', padx=(10,5))
-        self.rapid_gain_target_var = tk.DoubleVar(value=0.0)
-        self.rapid_gain_target_entry = tk.Entry(rapid_sl_frame, textvariable=self.rapid_gain_target_var, width=8, font=('Arial', 10, 'bold'))
-        self.rapid_gain_target_entry.pack(side='left', padx=(0,10))
-        tk.Label(rapid_sl_frame, text="(Patrimonio)", bg='#1e293b', fg='#64748b', font=('Arial', 9)).pack(side='left')
-
-        # Widgets IA adaptativa: fracción BUY y mini-historial
-        adapt_frame = tk.Frame(main_frame, bg='#1e293b')
-        adapt_frame.pack(fill='x', pady=(8, 0))
-
-        tk.Label(adapt_frame, text="IA Adaptativa → Frac. BUY:", bg='#1e293b', fg='#cbd5e1').pack(side='left', padx=(10,5))
-        frac_color = self.config['RAPID_OPS_FRAC_COLOR'].get() if 'RAPID_OPS_FRAC_COLOR' in self.config else '#f59e0b'
-        self.rapid_buy_frac_label = tk.Label(adapt_frame, text="50%", bg='#1e293b', fg=frac_color, font=('Arial', 10, 'bold'))
-        self.rapid_buy_frac_label.pack(side='left', padx=(0,10))
-
-        # Barra visual de fracción (0-100) con estilo personalizado
-        style = ttk.Style(self.root)
-        try:
-            style.theme_use('clam')
-        except Exception:
-            pass
-        style.configure('Rapid.Horizontal.TProgressbar', troughcolor='#0f172a', background=frac_color, thickness=14)
-        self.rapid_buy_frac_bar = ttk.Progressbar(adapt_frame, length=220, mode='determinate', maximum=100, style='Rapid.Horizontal.TProgressbar')
-        self.rapid_buy_frac_bar.pack(side='left', padx=(0,10), pady=4)
-
-        # Mini-resumen histórico
-        self.rapid_history_label = tk.Label(adapt_frame, text="Hist: -", bg='#1e293b', fg='#94a3b8', font=('Arial', 9))
-        self.rapid_history_label.pack(side='left', padx=(10,0))
-
-        # (La cuenta atrás se muestra ahora en el panel de estado principal)
-        # Botón para resetear la IA / historial de Operaciones Rápidas
-        tk.Button(adapt_frame, text="Reset IA / Historial", bg='#111827', fg='#f8fafc',
-            font=('Arial', 9, 'bold'), relief='raised', borderwidth=1,
-            command=self.reset_rapid_ai).pack(side='left', padx=(12,0))
-
-        # ===== BARRAS DE OPERACIONES FANTASMA =====
-        # Frame para barras fantasma
-        ghost_frame = tk.Frame(main_frame, bg='#1e293b')
-        ghost_frame.pack(fill='x', pady=(10, 0))
-
-        # Barra 1: Fantasma BUY
-        self.ghost_buy_label = tk.Label(ghost_frame, text="Fantasma BUY: 0 abiertas | 0 ganadas | 0 perdidas (30s)",
-            bg='#1e293b', fg='#38bdf8', font=('Arial', 10, 'bold'))
-        self.ghost_buy_label.pack(fill='x', padx=10, pady=2)
-
-        # Barra 2: Fantasma SELL
-
-        self.ghost_sell_label = tk.Label(ghost_frame, text="Fantasma SELL: 0 abiertas | 0 ganadas | 0 perdidas (30s)",
-            bg='#1e293b', fg='#f472b6', font=('Arial', 10, 'bold'))
-        self.ghost_sell_label.pack(fill='x', padx=10, pady=2)
-
-        # Log específico de operaciones fantasma
-        ghost_log_label = tk.Label(ghost_frame, text="Log de Operaciones Fantasma", bg='#1e293b', fg='#fbbf24', font=('Arial', 10, 'bold'))
-        ghost_log_label.pack(fill='x', padx=10, pady=(8,2))
-        self.ghost_log_text = scrolledtext.ScrolledText(ghost_frame, height=7, bg='#0f172a', fg='#e2e8f0', font=('Consolas', 9), relief='flat', padx=8, pady=4, insertbackground='white')
-        self.ghost_log_text.pack(fill='x', padx=10, pady=(0,10))
-
-        # Botón para resetear todo el estado (fantasmas, rápidas, logs) - fila propia debajo del log
-        reset_frame = tk.Frame(ghost_frame, bg='#1e293b')
-        reset_frame.pack(fill='x', pady=(6, 0))
-        try:
-            btn = tk.Button(reset_frame, text="Reset Estado", bg='#7c3aed', fg='white', font=('Arial', 10, 'bold'), relief='raised', command=self._on_reset_all_clicked)
-            btn.pack(fill='x', padx=10, pady=(4,8))
-        except Exception:
-            pass
-
     def add_ghost_log(self, message, tag='info'):
         timestamp = datetime.now().strftime("%H:%M:%S")
         log_message = f"[{timestamp}] {message}\n"
@@ -4999,10 +4637,6 @@ class MT5AdaptiveTradingBot:
             except Exception:
                 pass
             try:
-                self.update_rapid_operations_ui()
-            except Exception:
-                pass
-            try:
                 self._update_ui()
             except Exception:
                 pass
@@ -5035,172 +4669,106 @@ class MT5AdaptiveTradingBot:
                 print(f"Error trim_ghost_ops: {e}")
 
     def on_rapid_ops_toggle(self):
-        """Se ejecuta cuando checkbox de Operaciones Rápidas cambia"""
-        if self._safe_get('RAPID_OPS_ENABLED', False):
-            self.start_ghost_operations()
-            self.start_rapid_operations()
-        else:
-            self.stop_ghost_operations()
-            self.stop_rapid_operations()
+        """Eliminada - Operaciones Rápidas fueron removidas"""
+        pass
 
     def start_rapid_operations(self):
-        """Inicia Operaciones Rápidas usando configuración activa"""
-        if self.rapid_ops_running:
-            return
-
-        # Resetear contadores
-        self.rapid_ops_active.clear()
-        self.rapid_ops_total_opened = 0  # Contador permanente que controla alternancia
-        self.rapid_ops_buy_count = 0
-        self.rapid_ops_sell_count = 0
-        self.rapid_ops_total_profit = 0.0  # Resetear ganancias/pérdidas
-        self.last_rapid_op_time = 0
-
-        self.rapid_ops_running = True
-        # Inicializar fase y tiempos para IA adaptativa
-        self.rapid_ops_start_time = time.time()
-        self.rapid_initial_phase_done = False
-        self.rapid_target_buy_frac = 0.5
-
-        self.add_log(f"🚀 Operaciones Rápidas ACTIVADAS", 'success')
-
-        # Iniciar thread de monitoreo
-        self.rapid_ops_thread = threading.Thread(target=self.monitor_rapid_operations, daemon=True)
-        self.rapid_ops_thread.start()
+        """Eliminada - Operaciones Rápidas fueron removidas"""
+        pass
 
     def stop_rapid_operations(self):
-        """Detiene el sistema de operaciones rápidas"""
-        self.rapid_ops_running = False
-        self.config['RAPID_OPS_ENABLED'].set(False)
-        self.add_log("[STOP] Operaciones Rápidas detenidas", 'warning')
+        """Eliminada - Operaciones Rápidas fueron removidas"""
+        pass
 
     def reset_rapid_ai(self):
-        """Resetea el historial y el estado de la IA para Operaciones Rápidas.
-
-        Limpia `rapid_ops_history`, reinicia contadores específicos de rápidas y
-        vuelve a la fase inicial (50/50) para evitar sesgos anteriores.
-        """
-        try:
-            # Limpiar historial y métricas específicas de rápidas
-            if hasattr(self, 'rapid_ops_history'):
-                try:
-                    self.rapid_ops_history.clear()
-                except Exception:
-                    self.rapid_ops_history = deque(maxlen=int(self._safe_get('RAPID_OPS_HISTORY_SIZE', 200)))
-
-            # Resetear contadores que afectan la lógica de apertura
-            self.rapid_ops_total_opened = 0
-            self.rapid_ops_buy_count = 0
-            self.rapid_ops_sell_count = 0
-            self.rapid_ops_total_profit = 0.0
-
-            # Reiniciar fase adaptativa
-            self.rapid_initial_phase_done = False
-            self.rapid_ops_start_time = time.time()
-            self.rapid_target_buy_frac = 0.5
-            self.rapid_buy_frac_smoothed = None
-
-            # Actualizar UI inmediatamente
-            try:
-                self.rapid_buy_frac_label.config(text="50%")
-                self.rapid_buy_frac_bar['value'] = 50
-                self.rapid_history_label.config(text="Últ.1m → BUY: 0 | SELL: 0 | 0% BUY")
-                self._update_ui()
-            except Exception:
-                pass
-
-            self.add_log("[🔄] Reset IA Rápidas: historial y estado reiniciados (fase inicial 50/50)", 'info')
-        except Exception as e:
-            self.add_log(f"❌ Error reset_rapid_ai: {str(e)}", 'error')
+        """Eliminada - Operaciones Rápidas fueron removidas"""
+        pass
 
     def reset_all_state(self):
-        """Resetea todo el estado en memoria relacionado con operaciones rápidas, fantasmas,
-        logs y contadores para asegurar un arranque limpio.
-        Es segura si algunos atributos aún no existen (usa hasattr checks).
-        """
+        """Eliminada - Operaciones Rápidas fueron removidas"""
+        pass
+
+    def get_last_minute_counts(self):
+        """Eliminada - Operaciones Rápidas fueron removidas"""
+        pass
+
+    def decide_rapid_direction(self):
+        """Eliminada - Operaciones Rápidas fueron removidas"""
+        pass
+
+    def monitor_rapid_operations(self):
+        """Eliminada - Operaciones Rápidas fueron removidas"""
+        pass
+
+    def open_rapid_operation(self, symbol, force_direction=None):
+        """Eliminada - Operaciones Rápidas fueron removidas"""
+        pass
+
+    def check_and_close_rapid_operations(self, symbol):
+        """Eliminada - Operaciones Rápidas fueron removidas"""
+        pass
+
+    def _get_rapid_direction_loss_streak(self, direction):
+        """Eliminada - Operaciones Rápidas fueron removidas"""
+        pass
+
+    def _apply_rapid_reversal_protection(self, symbol, positions):
+        """Eliminada - Operaciones Rápidas fueron removidas"""
+        pass
+
+    def update_rapid_operations_ui(self):
+        """Eliminada - Operaciones Rápidas fueron removidas"""
+        pass
+
+    def get_volatility_level(self, rates):
+        """Helper para obtener nivel de volatilidad - usado por validación"""
         try:
-            # Detener cualquier thread en curso
-            try:
-                self.rapid_ops_running = False
-            except Exception:
-                pass
-            try:
-                self.ghost_ops_running = False
-            except Exception:
-                pass
+            if not rates or len(rates) < 2:
+                return 'NORMAL'
+            closes = [r['close'] for r in rates]
+            returns = [(closes[i] - closes[i-1]) / closes[i-1] for i in range(1, len(closes)) if closes[i-1] > 0]
+            if not returns:
+                return 'NORMAL'
+            volatility = np.std(returns)
+            if volatility > 0.005:  # 0.5%
+                return 'HIGH'
+            elif volatility > 0.002:  # 0.2%
+                return 'MEDIUM'
+            else:
+                return 'LOW'
+        except Exception:
+            return 'NORMAL'
 
-            # Limpiar operaciones rápidas
-            try:
-                if hasattr(self, 'rapid_ops_active'):
-                    self.rapid_ops_active.clear()
-            except Exception:
-                self.rapid_ops_active = {}
-            try:
-                if hasattr(self, 'rapid_ops_history'):
-                    self.rapid_ops_history.clear()
-                else:
-                    self.rapid_ops_history = deque(maxlen=int(self._safe_get('RAPID_OPS_HISTORY_SIZE', 200)))
-            except Exception:
-                self.rapid_ops_history = deque(maxlen=200)
-            self.rapid_ops_total_opened = 0
-            self.rapid_ops_buy_count = 0
-            self.rapid_ops_sell_count = 0
-            self.rapid_ops_total_profit = 0.0
-            self.last_rapid_op_time = 0
-            self.rapid_ops_start_time = 0
-            self.rapid_initial_phase_done = False
-            self.rapid_target_buy_frac = 0.5
-            self.rapid_buy_frac_smoothed = None
+    def _calculate_rsi_quick(self, closes, period=14):
+        """Cálculo rápido de RSI para validación pre-operación"""
+        try:
+            if len(closes) < period + 1:
+                return 50.0
+            deltas = np.diff(closes)
+            gains = np.where(deltas > 0, deltas, 0)
+            losses = np.where(deltas < 0, -deltas, 0)
+            avg_gain = np.mean(gains[-period:])
+            avg_loss = np.mean(losses[-period:])
+            if avg_loss == 0:
+                return 100.0 if avg_gain > 0 else 50.0
+            rs = avg_gain / avg_loss
+            rsi = 100 - (100 / (1 + rs))
+            return float(rsi)
+        except Exception:
+            return 50.0
 
-            # Limpiar operaciones fantasma
-            try:
-                self.ghost_ops = {'buy': [], 'sell': []}
-            except Exception:
-                pass
-            try:
-                if hasattr(self, 'ghost_ops_history'):
-                    self.ghost_ops_history.clear()
-                else:
-                    self.ghost_ops_history = []
-            except Exception:
-                self.ghost_ops_history = []
-            # Estadísticas y totales
-            self.ghost_stats = {'buy_open': 0, 'buy_win': 0, 'buy_loss': 0, 'sell_open': 0, 'sell_win': 0, 'sell_loss': 0}
-            self.ghost_total = {'buy_win': 0, 'buy_loss': 0, 'sell_win': 0, 'sell_loss': 0}
+    def open_real_trade(self, symbol, order_type, volume, sl_pips, tp_pips):
+        """Abre una operación real - función placeholder"""
+        pass
 
-            # Limpiar logs de UI si existen
-            try:
-                if hasattr(self, 'ghost_log_text'):
-                    self.ghost_log_text.delete('1.0', 'end')
-            except Exception:
-                pass
-            try:
-                if hasattr(self, 'log_text'):
-                    self.log_text.delete('1.0', 'end')
-            except Exception:
-                pass
+    def _run_on_ui_thread(self, func, *args):
+        """Ejecuta una función en el hilo UI usando after()"""
+        try:
+            if hasattr(self, 'root'):
+                self.root.after(0, lambda: func(*args) if args else func())
+        except Exception:
+            pass
 
-            # Otros contadores generales
-            try:
-                self.operaciones_actuales = set()
-                self.operaciones_procesadas = set()
-                self.operaciones_cerradas = 0
-            except Exception:
-                pass
-
-            # Resetear indicadores de sesión/pause
-            try:
-                self.block_until = 0.0
-                self.pause_until = 0.0
-            except Exception:
-                pass
-
-            self.add_log("[RESET] Estado reiniciado: operaciones rápidas y fantasmas limpiadas.", 'info')
-        except Exception as e:
-            try:
-                self.add_log(f"❌ Error en reset_all_state: {e}", 'error')
-            except Exception:
-                print(f"Error en reset_all_state: {e}")
 
     def get_last_minute_counts(self):
         """Cuenta BUY/SELL en el historial de rápidas dentro de la última 60s."""
@@ -7554,12 +7122,6 @@ class MT5AdaptiveTradingBot:
                         if not self.is_running or getattr(self, 'force_stop_triggered', False):
                             self.add_log("[BOT] Bot detenido - canceling nuevas operaciones", 'warning')
                             break
-                        
-                        # 🚀 NUEVA VERIFICACIÓN: Si Operaciones Rápidas está activa, saltar análisis
-                        if self.config['RAPID_OPS_ENABLED'].get():
-                            # Rapid Ops activo - no correr análisis, solo esperar a que el hilo abra operaciones
-                            time.sleep(0.05)  # ⭐ Ultra-rápido: 50ms - verificar cada ciclo instantáneamente
-                            continue
                         
                         self.add_log("\n🔍 Iniciando análisis de mercado para nueva operación...", 'info')
                         
