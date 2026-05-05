@@ -155,3 +155,29 @@ AttributeError: 'MT5AdaptiveTradingBot' object has no attribute 'scheduler_reloa
 2026-05-05 17:25:43,579 INFO MT5AdaptiveTradingBot: [INIT-RELOAD] ✓ reload_market_snapshots() retornó 500 snapshots (histórico)
 2026-05-05 17:25:43,579 INFO MT5AdaptiveTradingBot: [INIT-VERIFY] self.market_snapshots tiene 500 items tras reload
 2026-05-05 17:25:43,579 INFO MT5AdaptiveTradingBot: [INIT-FINAL] Estado final: market_snapshots = 500 items
+2026-05-05 17:27:16,910 ERROR MT5AdaptiveTradingBot: [MT5-EXCEPTION] ❌ EXCEPCIÓN agregando barra M1: no field of name volume
+2026-05-05 17:27:16,910 ERROR MT5AdaptiveTradingBot: [MT5-FALLBACK-EXCEPTION] ✓ Inyectado snapshot sintético URGENTE por excepción MT5: 72.83
+2026-05-05 17:27:16,921 INFO MT5AdaptiveTradingBot: [MT5-PERSIST] ⚠️ Guardado archivo HISTÓRICO: 500 barras (SILVER, con fallback sintético)
+2026-05-05 17:27:16,921 INFO MT5AdaptiveTradingBot: [reload] FINAL: 500 snapshots (backup: 500, self: 500)
+2026-05-05 17:30:18,697 ERROR MT5AdaptiveTradingBot: [MT5-EXCEPTION] ❌ EXCEPCIÓN agregando barra M1: no field of name volume
+2026-05-05 17:30:18,697 ERROR MT5AdaptiveTradingBot: [MT5-FALLBACK-EXCEPTION] ✓ Inyectado snapshot sintético URGENTE por excepción MT5: 72.83
+2026-05-05 17:30:18,707 INFO MT5AdaptiveTradingBot: [MT5-PERSIST] ⚠️ Guardado archivo HISTÓRICO: 500 barras (SILVER, con fallback sintético)
+2026-05-05 17:30:18,707 INFO MT5AdaptiveTradingBot: [reload] FINAL: 500 snapshots (backup: 500, self: 500)
+2026-05-05 17:37:06,170 ERROR MT5AdaptiveTradingBot: Error inicial leyendo market_snapshots.json
+Traceback (most recent call last):
+  File "c:/Users/eddgt/Desktop/new/ejet/Pruebas/boteddver1.py", line 1213, in __init__
+    self.market_snapshots = self.reload_market_snapshots()
+  File "c:/Users/eddgt/Desktop/new/ejet/Pruebas/boteddver1.py", line 1759, in reload_market_snapshots
+    is_scheduler_call = (self.scheduler_reload_time is not None and
+AttributeError: 'MT5AdaptiveTradingBot' object has no attribute 'scheduler_reload_time'
+2026-05-05 17:37:38,408 INFO MT5AdaptiveTradingBot: [INIT-PREFILL] ✓ prefill_market_data_and_return() retornó 500 snapshots en memoria
+2026-05-05 17:37:38,428 WARNING MT5AdaptiveTradingBot: [MT5-ERROR] ❌ copy_rates_from_pos retornó None para 
+2026-05-05 17:37:38,429 WARNING MT5AdaptiveTradingBot: [MT5-AUTO-SYNTH] ✓ Fallback por MT5 None: close 5.05 → 5.06
+2026-05-05 17:37:38,440 INFO MT5AdaptiveTradingBot: [MT5-PERSIST] ⚠️ Guardado archivo HISTÓRICO: 500 barras (, con fallback sintético)
+2026-05-05 17:37:38,440 INFO MT5AdaptiveTradingBot: [reload] FINAL: 500 snapshots (backup: 500, self: 500)
+2026-05-05 17:37:38,440 INFO MT5AdaptiveTradingBot: [INIT-RELOAD] ✓ reload_market_snapshots() retornó 500 snapshots (histórico)
+2026-05-05 17:37:38,440 INFO MT5AdaptiveTradingBot: [INIT-VERIFY] self.market_snapshots tiene 500 items tras reload
+2026-05-05 17:37:38,440 INFO MT5AdaptiveTradingBot: [INIT-FINAL] Estado final: market_snapshots = 500 items
+2026-05-05 17:37:40,942 WARNING MT5AdaptiveTradingBot: [FRESH_DATA] MT5 sin datos para , usando fallback cascada
+2026-05-05 17:37:40,950 INFO MT5AdaptiveTradingBot: [FALLBACK-JSON] ✅ Cargado: 1019 snapshots desde JSON
+2026-05-05 17:37:40,950 WARNING MT5AdaptiveTradingBot: [FRESH_DATA] Fallback cadena: json_success

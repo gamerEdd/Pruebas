@@ -3355,6 +3355,8 @@ class MT5AdaptiveTradingBot:
                 self.add_log("🔓 MÚLTIPLES PARTES desactivado: Operando con símbolo seleccionado en el Combobox", 'info')
         except Exception as e:
             self.add_log(f"Error en _on_multiple_parts_toggle: {str(e)[:60]}", 'error')
+
+    def _configure_symbol_parameters(self, symbol):
         """⭐ NUEVO: Configura automáticamente TODOS los parámetros según el par seleccionado"""
         try:
             symbol = symbol.upper()
@@ -8355,17 +8357,17 @@ class MT5AdaptiveTradingBot:
                 return False
             tp_diff = opportunity['tp_points']
         else:
-            # Para Multi-IA o forzadas: usar TP configurado
+            # Para Multi-IA o forzadas: usar TP configurado desde la GUI
             try:
-                tp_diff = float(self.config['TP_DIFF'].get()) if 'TP_DIFF' in self.config else 30.0
+                tp_diff = float(self.config['TP_DIFF'].get()) if 'TP_DIFF' in self.config else 1.0
             except Exception:
-                tp_diff = 30.0
+                tp_diff = 1.0
         
         # ⭐ OBLIGATORIO: obtener SL desde config (respetar diferencia)
         try:
-            sl_diff = float(self.config['SL_DIFF'].get()) if 'SL_DIFF' in self.config else 100.0
+            sl_diff = float(self.config['SL_DIFF'].get()) if 'SL_DIFF' in self.config else 30.0
         except Exception:
-            sl_diff = 100.0
+            sl_diff = 30.0
         
         tick = mt5.symbol_info_tick(symbol)
         if tick is None:
@@ -8381,6 +8383,9 @@ class MT5AdaptiveTradingBot:
             sl = round(precio + sl_diff, symbol_info.digits)
             tp = round(precio - tp_diff, symbol_info.digits)
             tipo = mt5.ORDER_TYPE_SELL
+        
+        # ⭐ LOG IMPORTANTE: Mostrar exactamente qué TP/SL se están usando
+        self.add_log(f"[TP/SL] Usando valores de GUI: TP_DIFF=${tp_diff:.2f}, SL_DIFF=${sl_diff:.2f}", 'info')
         # ===== NUEVO: Hard-filters antes de enviar orden =====
         try:
             # Re-evaluar estado de pausas y bloqueos (permitir bypass con force=True)
@@ -8560,7 +8565,8 @@ class MT5AdaptiveTradingBot:
         # Log de parámetros justo antes de enviar
         try:
             sl_text = f"SL={sl_final:.5f}" if usar_sl else "SIN SL"
-            self.add_log(f"Enviando orden -> symbol={symbol} vol={vol} precio={precio} {sl_text} tp={tp} tipo={'BUY' if tipo==mt5.ORDER_TYPE_BUY else 'SELL'}", 'info')
+            self.add_log(f"[ORDEN] Parámetros finales: {symbol} {direccion_sugerida} Vol={vol} Precio={precio:.5f} {sl_text} TP={tp:.5f}", 'success')
+            self.add_log(f"[ORDEN] ✅ Enviando operación → Vol={vol:.4f} Precio={precio:.5f} TP={tp:.5f} SL={sl_final:.5f}", 'info')
         except Exception:
             pass
 

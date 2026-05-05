@@ -7,3 +7,13 @@
 {"ts": "2026-05-05T22:14:59.349523", "scheduler": "forced_reopen_attempt_simple", "has_params": false}
 {"ts": "2026-05-05T22:16:00.077089", "scheduler": "forced_reopen_attempt_simple", "has_params": false}
 {"ts": "2026-05-05T22:17:00.822821", "scheduler": "forced_reopen_attempt_simple", "has_params": false}
+{"ts": "2026-05-05T22:27:16.868749", "scheduler": "forced_reopen_attempt_simple", "has_params": false}
+{"ts": "2026-05-05T22:28:17.504353", "scheduler": "forced_reopen_attempt_simple", "has_params": true}
+{"ts": "2026-05-05T22:29:18.048572", "scheduler": "forced_reopen_attempt_simple", "has_params": true}
+{"ts": "2026-05-05T22:30:18.675398", "scheduler": "forced_reopen_attempt_simple", "has_params": true}
+{"ts": "2026-05-05T22:31:19.356601", "scheduler": "forced_reopen_attempt_simple", "has_params": true}
+{"ts": "2026-05-05T22:32:20.125881", "scheduler": "forced_reopen_attempt_simple", "has_params": true}
+{"ts": "2026-05-05T22:33:21.023108", "scheduler": "forced_reopen_attempt_simple", "has_params": true}
+{"ts": "2026-05-05T22:34:21.795342", "scheduler": "forced_reopen_attempt_simple", "has_params": true}
+{"ts": "2026-05-05T22:35:22.561569", "scheduler": "forced_reopen_attempt_simple", "has_params": true}
+{"ts": "2026-05-05T22:36:23.370817", "scheduler": "forced_reopen_attempt_simple", "has_params": true}
