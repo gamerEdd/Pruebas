@@ -1,0 +1,65 @@
+# INSTRUCCIONES PARA PROBAR EL BOT CORREGIDO
+
+## Cambios Realizados
+Se han corregido TODOS los problemas de símbolo vacío que prevenían que el bot abriera operaciones.
+
+### Correcciones Específicas:
+1. ✓ Agregado método `_get_symbol()` que SIEMPRE retorna un símbolo válido
+2. ✓ Actualizado `bot_loop()` para usar símbolo validado
+3. ✓ Actualizado `abrir_operacion()` para usar símbolo validado  
+4. ✓ Actualizado `_microtrend_direction()` con triple-layer validation
+5. ✓ Actualizado `ghost_ops_loop()` para usar símbolo validado
+
+## Cómo Probar
+
+### Paso 1: Iniciar el Bot
+```
+python boteddver1.py
+```
+- Espera que aparezca la interfaz gráfica
+- Deberías ver logs indicando que GOLD y SILVER cargan datos (500 barras c/u)
+
+### Paso 2: Esperar Inicialización
+- Espera 3-5 segundos a que el bot termine de cargar datos
+- Deberías ver en la consola: "[INIT] ✅ Bot inicializado exitosamente"
+
+### Paso 3: Hacer Clic en "INICIAR BOT"
+- En la interfaz gráfica, busca el botón "INICIAR BOT"
+- Haz clic en él
+- El bot debería comenzar a:
+  1. Analizar el mercado cada minuto
+  2. Intentar abrir operaciones si las condiciones son favorables
+
+### Paso 4: Observar Logs
+En la consola, deberías ver:
+- `[IA] INICIANDO ANÁLISIS MULTI-IA` - Análisis comenzando
+- `[ABRIR]` logs - Intentos de apertura de operaciones
+- `[BUY]` o `[SELL]` - Operaciones abiertas
+
+### Qué Esperar
+- El bot analizará el mercado automáticamente
+- Abrirá operaciones cuando cumpla las condiciones de entrada
+- Cerrará operaciones según los objetivos de ganancia (TP/SL)
+
+### Si Aún No Abre Operaciones
+1. Revisa los logs de consola para mensajes de error
+2. Verifica que:
+   - Symbol mostrado sea GOLD o SILVER (no vacío)
+   - Haya 500+ snapshots cargados para cada símbolo
+   - No haya mensajes de pausa o bloqueo
+3. Reporta cualquier error específico que veas
+
+## Archivos Modificados
+- `boteddver1.py` - Líneas principales: 1595 (nuevo método), 6944, 8452, 891, 370
+- No se modificaron dependencias externas
+
+## Rollback si es Necesario
+Todos los cambios son en boteddver1.py. Si hay problemas:
+1. Haz backup del archivo actual
+2. Restaura una versión anterior
+3. Reporta los errores específicos
+
+---
+
+**Usuario**: Por favor, ejecuta el bot con estos cambios y observa si ahora abre operaciones correctamente.
+Si aún hay problemas, copia los logs completos de la consola y reporta qué está sucediendo.

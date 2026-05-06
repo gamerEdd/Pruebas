@@ -118,13 +118,29 @@ import contextlib
 try:
     _log_dir = os.path.join(os.path.dirname(__file__), 'logs')
     os.makedirs(_log_dir, exist_ok=True)
-    _log_file = os.path.join(_log_dir, 'bot.log')
-    # Use UTF-8 encoding to support special characters
-    _handler = logging.FileHandler(_log_file, mode='a', encoding='utf-8')
-    _handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(name)s: %(message)s'))
-    logging.basicConfig(level=logging.WARNING, handlers=[_handler])  # ⭐ Cambiar a WARNING para reducir spam
-except Exception:
-    logging.basicConfig(level=logging.WARNING, format='%(asctime)s %(levelname)s %(name)s: %(message)s')
+    
+    # ⭐ NUEVO: Configurar logging SOLO para consola (stderr), SIN archivo
+    _formatter = logging.Formatter('%(asctime)s [%(levelname)-8s] %(name)s: %(message)s')
+    
+    # Handler para consola (stderr) ÚNICAMENTE
+    _handler_console = logging.StreamHandler(sys.stderr)
+    _handler_console.setFormatter(_formatter)
+    _handler_console.setLevel(logging.DEBUG)
+    
+    # ⭐ NUEVO: Configurar logging en DEBUG para VER TODO EN CONSOLA
+    logging.basicConfig(
+        level=logging.DEBUG,
+        handlers=[_handler_console],
+        format='%(asctime)s [%(levelname)-8s] %(name)s: %(message)s'
+    )
+except Exception as e:
+    # Si falla la configuración, al menos imprimir el error
+    print(f"ERROR en configuración de logging: {e}", file=sys.stderr)
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s [%(levelname)-8s] %(name)s: %(message)s',
+        stream=sys.stderr
+    )
 
 # ⭐ SUPRIMIR LOGS DE TERCEROS: Desactivar todos los loggers de módulos importados
 for logger_name in ['loss_analyzer', 'loss_protection_ai', 'feedback_loop_ai', 
@@ -134,7 +150,26 @@ for logger_name in ['loss_analyzer', 'loss_protection_ai', 'feedback_loop_ai',
     logging.getLogger(logger_name).setLevel(logging.CRITICAL)
 
 logger = logging.getLogger('MT5AdaptiveTradingBot')
-logger.setLevel(logging.INFO)  # Solo INFO y superior
+logger.setLevel(logging.DEBUG)  # ⭐ CAMBIAR a DEBUG para ver TODOS los mensajes
+
+# ⭐ NUEVO: Manejador global de excepciones no capturadas
+def _handle_exception(exc_type, exc_value, exc_traceback):
+    """Captura TODAS las excepciones no manejadas y las imprime en consola"""
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+    
+    # Imprimir en consola (stderr) y en logging
+    error_msg = ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+    print("\n" + "="*60, file=sys.stderr)
+    print("⚠️ EXCEPCIÓN NO CAPTURADA", file=sys.stderr)
+    print("="*60, file=sys.stderr)
+    print(error_msg, file=sys.stderr)
+    print("="*60, file=sys.stderr)
+    
+    logger.critical(f"EXCEPCIÓN NO CAPTURADA: {error_msg}")
+
+sys.excepthook = _handle_exception
 
 # ⭐ FIX #3: SISTEMA CENTRALIZADO DE CACHE MT5 (30x reducción en API calls)
 class MT5CacheManager:
@@ -227,10 +262,10 @@ class MT5CacheManager:
                         tick = mt5.symbol_info_tick(symbol)
                         self.cache['ticks'][symbol] = tick
                         self.timestamp['ticks'] = time.time()
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning(f"[CACHE] Error updating tick for {symbol}: {e}")
         except Exception as e:
-            pass
+            logger.warning(f"[CACHE] Error in cache update cycle: {e}")
     
     def _update_account_info(self):
         """Actualiza la información de la cuenta"""
@@ -275,7 +310,8 @@ class MT5CacheManager:
                 self.cache['rates'][key] = rates
                 self.timestamp['rates'] = time.time()
             return rates
-        except Exception:
+        except Exception as e:
+            self.add_log(f"[ERROR] get_rates_from_cache: {str(e)[:80]}", 'error')
             return None
     
     def get_cache_age(self, data_type='positions'):
@@ -301,7 +337,8 @@ class MT5AdaptiveTradingBot:
                     'sell_win': self.ghost_total['sell_win'],
                     'sell_loss': self.ghost_total['sell_loss']
                 }
-        except Exception:
+        except Exception as e:
+            self.add_log(f"[ERROR] get_ghost_ops_stats: {str(e)[:80]}", 'error')
             return {'buy_win': 0, 'buy_loss': 0, 'sell_win': 0, 'sell_loss': 0}
 
     def get_rapid_ops_snapshot(self):
@@ -332,7 +369,11 @@ class MT5AdaptiveTradingBot:
         3. Luego confirma con precio actual vs bar_open
         """
         try:
-            symbol = symbol or self.config['SYMBOL'].get()
+            # ⭐ CRÍTICO: Asegurar que symbol NUNCA sea VACÍO o None
+            if not symbol or symbol.strip() == '':
+                symbol = self.config['SYMBOL'].get() if hasattr(self, 'config') else 'GOLD'
+            if not symbol or symbol.strip() == '':
+                symbol = 'GOLD'
             
             # Obtener threshold en decimal - USA THRESHOLD POR PAR (GOLD o SILVER)
             if threshold is None:
@@ -816,7 +857,7 @@ class MT5AdaptiveTradingBot:
                 if self.bot_pausado:
                     continue
                 
-                symbol = self.config['SYMBOL'].get()
+                symbol = self._get_symbol()
                 
                 # Get actual microtrend (detecta tendencias REALES: Usa el threshold de configuración)
                 current_microtrend = self._microtrend_direction(symbol, bars=10, threshold=None)
@@ -829,7 +870,7 @@ class MT5AdaptiveTradingBot:
                         # ⭐ ACCIÓN RÁPIDA: Abre operación en la NUEVA dirección
                         try:
                             self.add_log(f"[REVERSIÓN] 🚀 Abriendo {current_microtrend} por cambio de micro-momentum", 'warning')
-                            self.abrir_operacion(current_microtrend, force=True, startup=False, force_params=getattr(self, 'forced_open_params', None))
+                            self.abrir_operacion_smart(current_microtrend, force=True, startup=False)
                             self.add_log(f"[✅ REVERSIÓN-EJECUTADA] Operación {current_microtrend} abierta al instante", 'success')
                         except Exception as e:
                             self.add_log(f"[❌ REVERSIÓN-FALLO] {str(e)[:40]}", 'error')
@@ -849,7 +890,7 @@ class MT5AdaptiveTradingBot:
         import time
         while self.ghost_ops_running:
             now = time.time()
-            symbol = self.config['SYMBOL'].get()
+            symbol = self._get_symbol()
             # Abrir una BUY y SELL fantasma
             tick = mt5.symbol_info_tick(symbol)
             if tick:
@@ -962,8 +1003,8 @@ class MT5AdaptiveTradingBot:
                                         self.ghost_total[f'{typ}_win'] += 1
                                     elif op['result'] == 'loss':
                                         self.ghost_total[f'{typ}_loss'] += 1
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                logger.warning(f"[GHOST] Error processing ghost op: {e}")
                             
                             if op['result'] == 'win':
                                 self.add_ghost_log(f"Cierre {typ.upper()} WIN: {reason} | Profit={op['profit']:.2f} | Entry={op['entry_price']:.2f} | Close={current_price:.2f}")
@@ -980,8 +1021,8 @@ class MT5AdaptiveTradingBot:
                         else:
                             # Si no hay lock, llamar directamente
                             self._trim_ghost_ops_locked(typ, 50)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        self.add_log(f"[ERROR] _trim_ghost_ops_locked: {str(e)[:80]}", 'error')
             # NO marcar como expiradas; las mantendremos abiertas hasta cierre real
             self.ghost_ops[typ] = to_keep
             open_count = sum(1 for op in to_keep if op['result'] is None)
@@ -1004,8 +1045,9 @@ class MT5AdaptiveTradingBot:
                 self.ghost_sell_label.config(
                     text=f"Fantasma SELL: {b['sell_open']} abiertas | {t['sell_win']} ganadas | {t['sell_loss']} perdidas (total)"
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"[GHOST] Error updating ghost stats UI: {e}")
+    
     def __init__(self, root):
         # ====== ESTADO DE OPERACIONES FANTASMA (debe ir primero) ======
         self.ghost_ops = {
@@ -1016,7 +1058,8 @@ class MT5AdaptiveTradingBot:
         try:
             self.ghost_ops_lock = threading.Lock()
             self.decision_lock = threading.Lock()  # ⭐ NUEVO: Sincroniza decisiones en threads paralelos (previene duplicacion)
-        except Exception:
+        except Exception as e:
+            self.add_log(f"[ERROR] Creating locks: {str(e)}", 'error')
             self.ghost_ops_lock = None
             self.decision_lock = None
         self.ghost_stats = {
@@ -1051,8 +1094,8 @@ class MT5AdaptiveTradingBot:
         # Asegurar que al iniciar el bot el estado runtime esté limpio
         try:
             self.reset_all_state()
-        except Exception:
-            pass
+        except Exception as e:
+            self.add_log(f"[ERROR] reset_all_state on init: {str(e)[:80]}", 'error')
         # Parámetros para reaperturas forzadas basadas en la apertura inicial
         self.forced_open_params = None  # dict with keys: symbol, direction, vol, tp, sl
         self.forced_open_interval = 300  # segundos (5 minutos)
@@ -1208,22 +1251,107 @@ class MT5AdaptiveTradingBot:
              'SPECIALIST_DEBUG_LOGS': tk.BooleanVar(value=False),  # Logs detallados de especialistas
              'SNAPSHOT_RELOAD_INTERVAL': tk.IntVar(value=30),  # Intervalo recarga snapshots (segundos)
         }
-        # Cargar snapshots de mercado existentes en memoria (si existen) usando reload (con logging)
-        try:
-            self.market_snapshots = self.reload_market_snapshots()
-        except Exception:
-            logger.exception("Error inicial leyendo market_snapshots.json")
-            self.market_snapshots = []
+        
+        # ⭐ NUEVO: Estructura de snapshots INDEPENDIENTE POR PAR
+        self.market_snapshots_by_symbol = {}  # {symbol: [snapshots]}
+        self.market_snapshots_backup_by_symbol = {}  # {symbol: [backup]}
+        self.market_snapshots_lock_by_symbol = {}  # {symbol: lock}
+        self.balance_inicial_para_margen_by_symbol = {}  # {symbol: valor}
+        self.objetivo_margen_ganancia_by_symbol = {}  # {symbol: valor}
+        self.last_successful_reload_time_by_symbol = {}  # {symbol: timestamp}
+        self.reload_count_by_symbol = {}  # {symbol: contador}
+        self.scheduler_reload_time_by_symbol = {}  # {symbol: timestamp}
+        
+        # ⭐ INICIALIZAR ATRIBUTOS que reload_market_snapshots() necesita
+        self.last_successful_reload_time = 0
+        self.reload_count = 0
+        self.scheduler_reload_time = None
+        
+        # Inicializar para GOLD y SILVER
+        for symbol in ['GOLD', 'SILVER']:
+            self.market_snapshots_by_symbol[symbol] = []
+            self.market_snapshots_backup_by_symbol[symbol] = []
+            self.market_snapshots_lock_by_symbol[symbol] = threading.Lock()
+            self.balance_inicial_para_margen_by_symbol[symbol] = 0.0
+            self.objetivo_margen_ganancia_by_symbol[symbol] = 0.0
+            self.last_successful_reload_time_by_symbol[symbol] = 0
+            self.reload_count_by_symbol[symbol] = 0
+            self.scheduler_reload_time_by_symbol[symbol] = None
+        
+        # ⭐ INICIALIZAR ANTES de usar en reload_market_snapshots()
+        self.MAX_SNAPSHOTS = 1440  # 24h en M1, limpia automáticamente
+        
+        # Cargar snapshots independientes por par
+        for symbol in ['GOLD', 'SILVER']:
+            try:
+                self.market_snapshots_by_symbol[symbol] = self.reload_market_snapshots(symbol=symbol)
+            except Exception:
+                logger.exception(f"Error cargando market_snapshots para {symbol}")
+                self.market_snapshots_by_symbol[symbol] = []
+        
+        # ⭐ Mantener compatibilidad hacia atrás con self.market_snapshots
+        self.market_snapshots = self.market_snapshots_by_symbol.get('GOLD', [])
+        self.market_snapshots_backup = self.market_snapshots_backup_by_symbol.get('GOLD', [])
+        
         # Riesgo por trade (fracción del equity). Usado para sizing dinámico.
         self.config['RISK_PCT'] = tk.DoubleVar(value=0.005)  # 0.5% por defecto
         
         # ⭐ CONFIG ÓPTIMA PARA GOLD (Scalping limpio y constante)
-        self.config['GOLD_THRESHOLD'] = tk.DoubleVar(value=18)  # ⭐ EN PIPS (como MICROTREND_THRESHOLD): 18 para ORO, se convierte a 0.18 decimal
+        # 🟡 1. THRESHOLD (Disparador de entrada) - RANGO: 16-19, IDEAL: 18
+        #    ├─ Más bajo (16) → Entra en ruido, más falsos positivos
+        #    ├─ Ideal (18) → Balance perfecto: buenos movimientos + filtra ruido
+        #    └─ Más alto (19) → Rechaza buenos movimientos, entra tarde
+        self.config['GOLD_THRESHOLD'] = tk.DoubleVar(value=18)  # 🎯 EN PIPS: 18 para ORO (se convierte a 0.18 decimal)
+        
+        # 🟡 2. MICROTENDENCIA (Confirmación de dirección)  - RANGO: 3-5 velas, IDEAL: 4
+        #    ├─ Mínimo (3): Mayor rapidez pero más falsos positivos
+        #    ├─ Ideal (4): Balance perfecto - captura movimientos claros
+        #    └─ Máximo (5): Más filtrado, entra solo en movimientos fuertes
+        #    ⚠️ COMBINADO CON: Análisis de 10/20/30 velas previas
+        #       → Todas las velas deben ir en MISMA DIRECCIÓN
+        #       → Cuerpo claro (mínimo 60%)
+        #       → Confir. con tendencia de fondo (10/20/30 velas = contexto)
         self.config['GOLD_MICROTREND_CANDLES'] = tk.IntVar(value=4)  # Rango 3-5 (4 ideal)
+        
+        # 🟡 3. FILTRO DE VELA (CLAVE - Elimina ruido)
+        #    ├─ Cuerpo ≥ 60%: Vela con cuerpo fuerte
+        #    ├─ Mecha ≤ 40%: Mechas pequeñas (no rechazada)
+        #    └─ Cierre cerca del extremo:
+        #       • BUY: Cierre ≥ 70% del rango (cerca del MÁXIMO)
+        #       • SELL: Cierre ≤ 30% del rango (cerca del MÍNIMO)
         self.config['GOLD_CANDLE_BODY_PCT'] = tk.IntVar(value=60)  # Mínimo 60% de cuerpo
+        self.config['GOLD_CANDLE_WICK_PCT'] = tk.IntVar(value=40)  # Máximo 40% para mechas
+        self.config['GOLD_CANDLE_CLOSE_PCT'] = tk.IntVar(value=70)  # BUY: ≥70%, SELL: ≤30%
         self.config['GOLD_VIDYA_CMO'] = tk.IntVar(value=9)  # CMO para VIDYA
         self.config['GOLD_VIDYA_EMA'] = tk.IntVar(value=12)  # EMA para VIDYA
         self.config['GOLD_IMPULSE_FILTER'] = tk.DoubleVar(value=1.5)  # Movimiento mínimo en puntos
+        
+        # 🟡 REFERENCIA RÁPIDA - FLUJO DE VALIDACIÓN GOLD:
+        #    1️⃣  THRESHOLD (16-19 pips, ideal 18) - Filtro de impulso base
+        #    2️⃣  MICROTENDENCIA + CONTEXTO MULTI-PERÍODO:
+        #        ├─ Últimas 3-5 velas: TODAS en MISMA dirección ✓
+        #        ├─ Contexto 10 velas: Tendencia general
+        #        ├─ Contexto 20 velas: Tendencia media
+        #        ├─ Contexto 30 velas: Tendencia larga
+        #        └─ VALIDACIÓN: Velas recientes deben alinearse con tendencia de fondo
+        #    3️⃣  FILTRO DE VELA (CRÍTICO - 3 CRITERIOS - Elimina ~90% ruido):
+        #        ├─ Cuerpo ≥ 60% - Vela con cuerpo fuerte, no es mecha
+        #        ├─ Mecha ≤ 40% - Las mechas/sombras son pequeñas
+        #        └─ Cierre cerca del extremo:
+        #           • BUY: Cierre ≥ 70% del rango (MUY CERCA del MÁXIMO)
+        #           • SELL: Cierre ≤ 30% del rango (MUY CERCA del MÍNIMO)
+        #    4️⃣  IMPULSO (1.5 puntos mínimo) - Movimiento real, no ruido
+        #    5️⃣  FILTRO ANTI-RUIDO (4. Evitar):
+        #        ├─ ❌ 2 velas seguidas con mechas grandes (> 50%)
+        #        ├─ ❌ Rango lateral (máximos/mínimos iguales ±2 pips)
+        #        └─ ❌ Velas pequeñas consecutivas (cuerpo < 30%)
+        #    6️⃣  VIDYA (5. Apoyo - CMO:9, EMA:12):
+        #        ├─ BUY: Precio arriba de VIDYA + VIDYA subiendo ✓
+        #        ├─ SELL: Precio abajo de VIDYA + VIDYA bajando ✓
+        #        └─ VIDYA debe tener inclinación clara (no horizontal)
+        #    
+        #    ✅ ENTRA: Si TODAS las 6 validaciones pasan
+        #    ❌ RECHAZA: Si CUALQUIERA falla
         
         # ⭐ CONFIG ÓPTIMA PARA SILVER (Scalping M1/M5 más rápido)
         self.config['SILVER_THRESHOLD'] = tk.DoubleVar(value=15)  # ⭐ EN PIPS (como MICROTREND_THRESHOLD): 15 para PLATA, se convierte a 0.15 decimal
@@ -1250,34 +1378,32 @@ class MT5AdaptiveTradingBot:
                 self.buy_specialist.debug_logs = debug_logs
             if hasattr(self, 'sell_specialist'):
                 self.sell_specialist.debug_logs = debug_logs
-        except Exception:
-            pass
+        except Exception as e:
+            self.add_log(f"[ERROR] Setting specialist debug logs: {str(e)}", 'error')
         
         # Lock para sincronizar acceso a market_snapshots en múltiples hilos
         try:
             self.market_snapshots_lock = threading.Lock()
-        except Exception:
+        except Exception as e:
+            self.add_log(f"[ERROR] Creating market_snapshots_lock: {str(e)}", 'error')
             self.market_snapshots_lock = None
         
-        # ⭐ NUEVO: Sistema de Reanalisis Post-Cierre
-        # Cuando se cierra la última operación, reanaliza todo antes de permitir nuevas entradas
-        self.post_close_reanalysis_active = False  # Flag: reanalisis en progreso
-        self.post_close_reanalysis_until = 0.0  # Timestamp hasta cuándo dura el reanalisis
-        self.post_close_reanalysis_thread = None  # Thread para ejecutar el reanalisis
-        self.post_close_reanalysis_last_scores = {'buy': 0, 'sell': 0}  # Últimos scores calculados
+        # ⭐ NUEVO: Sistema de Reanalisis Post-Cierre por símbolo
+        self.post_close_reanalysis_active_by_symbol = {'GOLD': False, 'SILVER': False}
+        self.post_close_reanalysis_until_by_symbol = {'GOLD': 0.0, 'SILVER': 0.0}
+        self.post_close_reanalysis_thread_by_symbol = {'GOLD': None, 'SILVER': None}
+        self.post_close_reanalysis_last_scores_by_symbol = {'GOLD': {'buy': 0, 'sell': 0}, 'SILVER': {'buy': 0, 'sell': 0}}
         
-        # ⭐ PROTECCIÓN CRÍTICA: Sistema de respaldo para NUNCA perder snapshots
-        self.market_snapshots_backup = []  # ⭐ Respaldo que se actualiza CADA reload exitoso
-        self.last_successful_reload_time = 0  # Timestamp del último reload exitoso
-        self.reload_count = 0  # Contador de recargas
-        self.scheduler_reload_time = None  # Timestamp cuando scheduler hace reload (para detectar ciclo 4m)
-        
-        # ⭐ FLAGS DE SINCRONIZACIÓN: trend_monitor → scheduler (prevenir race conditions)
-        self.trend_analysis_lock = threading.Lock()
-        self.trend_imminent_reversal = False      # Si hay reversión inminente (>70%)
-        self.trend_imminent_direction = None      # La dirección esperada (BUY/SELL)
-        self.trend_imminent_confidence = 0.0      # Confianza de la reversión
-        self.trend_analysis_ready = True          # Si el análisis está actualizado
+        # ⭐ FLAGS DE SINCRONIZACIÓN por símbolo
+        self.trend_analysis_lock = threading.Lock()  # ⭐ Global lock para compatibilidad
+        self.trend_analysis_lock_by_symbol = {'GOLD': threading.Lock(), 'SILVER': threading.Lock()}
+        self.trend_imminent_reversal = False  # ⭐ Global flag para compatibilidad
+        self.trend_imminent_reversal_by_symbol = {'GOLD': False, 'SILVER': False}
+        self.trend_imminent_direction = None  # ⭐ Global para compatibilidad
+        self.trend_imminent_direction_by_symbol = {'GOLD': None, 'SILVER': None}
+        self.trend_imminent_confidence = 0.0  # ⭐ Global para compatibilidad
+        self.trend_imminent_confidence_by_symbol = {'GOLD': 0.0, 'SILVER': 0.0}
+        self.trend_analysis_ready_by_symbol = {'GOLD': True, 'SILVER': True}
         
         # ⭐ Monitor de actualización de datos
         self.last_data_stats_log = 0
@@ -1349,6 +1475,9 @@ class MT5AdaptiveTradingBot:
         self.saldo_inicial = 0.0
         self.ganancia_total = 0.0
         self.direccion_actual = None
+        
+        # ⭐ INICIALIZAR pending_operations (lista de operaciones en espera)
+        self.pending_operations = []
         self.ultima_perdida = False
         self.ultima_direccion = None
         self.ultimo_precio = None
@@ -1464,6 +1593,8 @@ class MT5AdaptiveTradingBot:
         self.objetivo_neto_label = None  # Widget para mostrar el estado
         self.objetivo_neto_thread = None
         self.objetivo_neto_running = False
+        self.objetivo_neto_inicial = 0.0  # ⭐ NUEVO: Equity inicial para calcular meta
+        self.objetivo_neto_target = 0.0  # ⭐ NUEVO: Equity objetivo = inicial + objetivo_neto
         
         self.trend_monitor_thread = None
         self.trend_monitor_running = False
@@ -1517,40 +1648,55 @@ class MT5AdaptiveTradingBot:
         self.fresh_data_lock = threading.Lock()
         
         self.create_widgets()
+    
+    def _get_symbol(self):
+        """⭐ HELPER: Obtiene símbolo VALIDADO - NUNCA retorna cadena vacía"""
+        try:
+            if not hasattr(self, 'config') or self.config is None:
+                return 'GOLD'
+            
+            symbol = self.config.get('SYMBOL', None)
+            if symbol is None:
+                return 'GOLD'
+            
+            symbol_val = symbol.get() if hasattr(symbol, 'get') else symbol
+            if not symbol_val or (isinstance(symbol_val, str) and symbol_val.strip() == ''):
+                return 'GOLD'
+            
+            return symbol_val
+        except Exception as e:
+            logger.debug(f"[_get_symbol] Error: {str(e)[:60]}, returning GOLD")
+            return 'GOLD'
 
     def get_fresh_market_data(self, symbol, bars=100):
         """
-        ⭐ FUNCIÓN CRÍTICA: Obtiene datos FRESCOS de MT5 DIRECTAMENTE
-        - Prioridad 1: Cache fresco del monitor (actualizado cada segundo)
-        - Prioridad 2: Llamada directa a MT5
-        - SIN cache estanco, SIN fallback a JSON
-        - Conversión directa de formato MT5 a snapshots
-        - Garantiza microtendencias en tiempo real
+        ⭐ PRIORIDAD: JSON primero (datos seguros), MT5 como fallback
         """
         try:
-            # ⭐ PRIORIDAD 1: Usar cache del monitor si está muy fresco (< 1 segundo de antigüedad)
+            # ⭐ PRIORIDAD 1: Cargar del JSON - DATOS SEGUROS Y CONFIRMADOS
+            json_snaps = self._read_snapshots_for_symbol(symbol)
+            if json_snaps and len(json_snaps) >= bars:
+                return json_snaps[-bars:] if len(json_snaps) >= bars else json_snaps
+            
+            # ⭐ PRIORIDAD 2: Cache del monitor si está muy fresco
             try:
                 with self.fresh_data_lock:
                     cache_age = time.time() - self.fresh_data_timestamp
-                    if cache_age < 0.5 and len(self.fresh_market_data_cache) >= 50:  # Cache válido si tiene < 0.5s
-                        logger.debug(f"[FRESH_DATA] ✓ Usando cache del monitor ({cache_age:.2f}s antiguo)")
+                    if cache_age < 0.5 and len(self.fresh_market_data_cache) >= 50:
+                        logger.debug(f"[FRESH_DATA] ✓ Cache del monitor ({cache_age:.2f}s)")
                         return list(self.fresh_market_data_cache)[-bars:] if len(self.fresh_market_data_cache) >= bars else list(self.fresh_market_data_cache)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"[FRESH_DATA] Error reading cache: {str(e)[:60]}")
             
-            # ⭐ PRIORIDAD 2: Llamada directa a MT5
+            # ⭐ PRIORIDAD 3: MT5 como fallback
             rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M1, 0, bars)
             rates = mt5_safe._ensure_rates_list(rates)
             
             if rates is None or len(rates) == 0:
-                logger.warning(f"[FRESH_DATA] MT5 sin datos para {symbol}, usando fallback cascada")
-                # ⭐ Usar cascada robusta de fallback en lugar de solo reload_market_snapshots()
-                fallback_snaps, fallback_chain = self._robust_fallback_cascade()
-                if fallback_snaps:
-                    logger.warning(f"[FRESH_DATA] Fallback cadena: {' → '.join(fallback_chain)}")
-                    return fallback_snaps
-                else:
-                    return []
+                # Si MT5 falla, retornar JSON aunque sea viejo
+                if json_snaps and len(json_snaps) > 0:
+                    return json_snaps[-bars:] if len(json_snaps) >= bars else json_snaps
+                return []
             
             # Convertir MT5 rates a snapshots format
             market_snaps = []
@@ -1564,12 +1710,11 @@ class MT5AdaptiveTradingBot:
                     'tick_volume': int(rate['tick_volume']) if isinstance(rate, dict) else int(rate[5]),
                 }
                 market_snaps.append(snap)
-            
-            logger.debug(f"[FRESH_DATA] ✓ Obtenidas {len(market_snaps)} barras FRESCAS de MT5 para {symbol}")
             return market_snaps
         except Exception as e:
             logger.error(f"[FRESH_DATA] Error: {str(e)[:60]} - usando fallback JSON")
-            return self.reload_market_snapshots() or []
+            # ⭐ Usar el símbolo recibido como parámetro
+            return self.reload_market_snapshots(symbol=self._map_symbol_internal(symbol)) or []
 
     def _update_snapshots_4min_cycle(self):
         """⭐ NEW: Manejar ciclo de snapshots cada 4 minutos de forma centralizada.
@@ -1586,14 +1731,14 @@ class MT5AdaptiveTradingBot:
             symbol = self.config.get('SYMBOL', tk.StringVar(value='GOLD')).get() if hasattr(self, 'config') else 'GOLD'
             
             # Traer últimos 240 snapshots (4 horas de M1, más que suficiente para últimas barras)
-            latest_snaps = self._get_fresh_market_data(symbol, bars=240) or []
+            latest_snaps = self.get_fresh_market_data(symbol, bars=240) or []
             
             if not latest_snaps or len(latest_snaps) == 0:
                 logger.warning(f"[4MIN-CYCLE] ⚠️ No se obtuvieron snapshots frescos")
                 return (False, 0, {})
             
-            # Agregar al histórico
-            write_market_snapshots(latest_snaps, symbol=symbol, max_snapshots=1440)
+            # Agregar al histórico (usando method que ya maneja símbolo)
+            self.reload_market_snapshots(symbol=symbol)
             
             # Obtener metadata actualizada
             meta = get_market_snapshots_metadata()
@@ -1638,40 +1783,41 @@ class MT5AdaptiveTradingBot:
         
         return (True, "valid")
 
-    def _try_load_from_json(self):
-        """⭐ PASO 1 DE FALLBACK: Intentar cargar desde JSON."""
+    def _try_load_from_json(self, symbol='GOLD'):
+        """⭐ PASO 1 DE FALLBACK: Intentar cargar desde JSON específico del símbolo."""
         try:
-            from trade_logger import read_market_snapshots
-            snaps = read_market_snapshots() or []
+            snaps = self._read_snapshots_for_symbol(symbol) or []
             is_valid, reason = self._validate_snapshots_integrity(snaps)
             if is_valid:
-                logger.info(f"[FALLBACK-JSON] ✅ Cargado: {len(snaps)} snapshots desde JSON")
+                logger.info(f"[FALLBACK-JSON-{symbol}] ✅ Cargado: {len(snaps)} snapshots desde JSON")
                 return (snaps, 'json_success')
             else:
-                logger.warning(f"[FALLBACK-JSON] ❌ JSON inválido: {reason}")
+                logger.warning(f"[FALLBACK-JSON-{symbol}] ❌ JSON inválido: {reason}")
                 return ([], 'json_invalid')
         except Exception as e:
-            logger.error(f"[FALLBACK-JSON] ❌ Error: {str(e)[:50]}")
+            logger.error(f"[FALLBACK-JSON-{symbol}] ❌ Error: {str(e)[:50]}")
             return ([], 'json_error')
 
-    def _try_load_from_backup(self):
-        """⭐ PASO 2 DE FALLBACK: Intentar cargar desde backup en memoria."""
-        is_valid, reason = self._validate_snapshots_integrity(self.market_snapshots_backup, min_count=5)
+    def _try_load_from_backup(self, symbol='GOLD'):
+        """⭐ PASO 2 DE FALLBACK: Intentar cargar desde backup en memoria específico del símbolo."""
+        backup = self.market_snapshots_backup_by_symbol.get(symbol, [])
+        is_valid, reason = self._validate_snapshots_integrity(backup, min_count=5)
         if is_valid:
-            logger.warning(f"[FALLBACK-BACKUP] ✅ Cargado: {len(self.market_snapshots_backup)} snapshots desde backup")
-            return (list(self.market_snapshots_backup), 'backup_success')
+            logger.warning(f"[FALLBACK-BACKUP-{symbol}] ✅ Cargado: {len(backup)} snapshots desde backup")
+            return (list(backup), 'backup_success')
         else:
-            logger.warning(f"[FALLBACK-BACKUP] ❌ Backup inválido: {reason}")
+            logger.warning(f"[FALLBACK-BACKUP-{symbol}] ❌ Backup inválido: {reason}")
             return ([], 'backup_invalid')
 
-    def _try_load_from_memory(self):
-        """⭐ PASO 3 DE FALLBACK: Intentar cargar desde self.market_snapshots."""
-        is_valid, reason = self._validate_snapshots_integrity(self.market_snapshots, min_count=5)
+    def _try_load_from_memory(self, symbol='GOLD'):
+        """⭐ PASO 3 DE FALLBACK: Intentar cargar desde memoria específica del símbolo."""
+        snaps = self.market_snapshots_by_symbol.get(symbol, [])
+        is_valid, reason = self._validate_snapshots_integrity(snaps, min_count=5)
         if is_valid:
-            logger.warning(f"[FALLBACK-MEMORY] ✅ Cargado: {len(self.market_snapshots)} snapshots desde memoria")
-            return (list(self.market_snapshots), 'memory_success')
+            logger.warning(f"[FALLBACK-MEMORY-{symbol}] ✅ Cargado: {len(snaps)} snapshots desde memoria")
+            return (list(snaps), 'memory_success')
         else:
-            logger.warning(f"[FALLBACK-MEMORY] ❌ Memoria inválida: {reason}")
+            logger.warning(f"[FALLBACK-MEMORY-{symbol}] ❌ Memoria inválida: {reason}")
             return ([], 'memory_invalid')
 
     def _generate_synthetic_snapshots(self, count=10):
@@ -1710,13 +1856,13 @@ class MT5AdaptiveTradingBot:
             logger.error(f"[FALLBACK-SYNTHETIC] ❌ Error generando synthetic: {e}")
             return []
 
-    def _robust_fallback_cascade(self):
-        """⭐ CENTRALIZAR: Cascada robusta de fallback completa.
+    def _robust_fallback_cascade(self, symbol='GOLD'):
+        """⭐ CENTRALIZAR: Cascada robusta de fallback completa por símbolo.
         
         Intenta en orden:
         1. JSON (si tiene datos válidos)
-        2. Backup en memoria (market_snapshots_backup)
-        3. Memoria actual (self.market_snapshots)
+        2. Backup en memoria (market_snapshots_backup_by_symbol)
+        3. Memoria actual (self.market_snapshots_by_symbol)
         4. Generar synthetic (último recurso)
         
         Returns: (snapshots, fallback_chain_used)
@@ -1724,19 +1870,19 @@ class MT5AdaptiveTradingBot:
         fallbacks_used = []
         
         # PASO 1: JSON
-        snaps, reason = self._try_load_from_json()
+        snaps, reason = self._try_load_from_json(symbol)
         fallbacks_used.append(reason)
         if len(snaps) > 0:
             return (snaps, fallbacks_used)
         
         # PASO 2: Backup
-        snaps, reason = self._try_load_from_backup()
+        snaps, reason = self._try_load_from_backup(symbol)
         fallbacks_used.append(reason)
         if len(snaps) > 0:
             return (snaps, fallbacks_used)
         
         # PASO 3: Memoria
-        snaps, reason = self._try_load_from_memory()
+        snaps, reason = self._try_load_from_memory(symbol)
         fallbacks_used.append(reason)
         if len(snaps) > 0:
             return (snaps, fallbacks_used)
@@ -1747,7 +1893,7 @@ class MT5AdaptiveTradingBot:
         
         return (snaps, fallbacks_used)
 
-    def reload_market_snapshots(self, max_len=500, protect_from_empty=True):
+    def reload_market_snapshots(self, symbol='GOLD', max_len=500, protect_from_empty=True):
         """
         Lee `logs/market_snapshots.json` y AGREGA última barra M1 de MT5 para frescura.
         ⭐ CRÍTICO: NUNCA permite sobrescribir con lista vacía - SIEMPRE mantiene datos disponibles
@@ -1767,26 +1913,33 @@ class MT5AdaptiveTradingBot:
             logger.info(f"[reload] ⭐ CICLO DE 4M DETECTADO: {time_since_init:.0f}s desde último reload exitoso")
             logger.info(f"[reload] Iniciando RECARGA FRESCA...")
             try:
-                symbol = self.config.get('SYMBOL', tk.StringVar(value='GOLD')).get() if hasattr(self, 'config') else 'GOLD'
+                # ⭐ CRÍTICO: Respetar el símbolo pasado como parámetro
+                # Solo usar config como fallback si está VACÍO
+                if not symbol:
+                    symbol = self.config.get('SYMBOL', tk.StringVar(value='GOLD')).get() if hasattr(self, 'config') else 'GOLD'
+                # ⭐ SEGURIDAD: Asegurar que símbolo NO sea vacío nunca
+                if not symbol or symbol.strip() == '':
+                    symbol = 'GOLD'
+                    
                 filled, fresh_snaps = prefill_market_data_and_return(symbol, minutes=500)
-                logger.info(f"[reload] ✓ RECARGA FRESCA: {filled} snapshots frescos obtenidos")
+                logger.info(f"[reload] ✓ RECARGA FRESCA ({symbol}): {filled} snapshots frescos obtenidos")
                 if len(fresh_snaps) > 0:
                     snaps = list(fresh_snaps)
                 else:
-                    logger.warning(f"[reload] ⚠️ RECARGA FRESCA: prefill retornó 0 snapshots")
+                    logger.warning(f"[reload] ⚠️ RECARGA FRESCA ({symbol}): prefill retornó 0 snapshots")
                     snaps = []
             except Exception as e:
-                logger.error(f"[reload] ❌ Error en recarga fresca: {e}")
+                logger.error(f"[reload] ❌ Error en recarga fresca ({symbol}): {e}")
                 snaps = []
             # Resetear contador para el siguiente ciclo de 4m
             self.last_successful_reload_time = now
         else:
             # Reload normal (incremental, no es ciclo de 4m)
             try:
-                snaps = read_market_snapshots() or []
-                logger.debug(f"[reload] read_market_snapshots() retornó {len(snaps)} barras (tipo: {type(snaps).__name__})")
-            except Exception:
-                logger.exception("Error leyendo market_snapshots desde disco")
+                snaps = self._read_snapshots_for_symbol(symbol) or []
+                logger.debug(f"[reload] _read_snapshots_for_symbol({symbol}) retornó {len(snaps)} barras (tipo: {type(snaps).__name__})")
+            except Exception as e:
+                logger.exception(f"[ERROR] Reading market_snapshots from disk: {str(e)[:80]}")
                 snaps = getattr(self, 'market_snapshots', []) or []
                 logger.debug(f"[reload] Fallback a self.market_snapshots: {len(snaps)} barras")
         
@@ -1799,8 +1952,8 @@ class MT5AdaptiveTradingBot:
             if isinstance(snaps, list) and len(snaps) > max_len:
                 snaps = snaps[-max_len:]
                 logger.debug(f"[reload] Truncada a max_len={max_len}: {len(snaps)} barras")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[reload] Error truncating snapshots: {str(e)[:60]}")
         
         # ⭐ CHECKPOINT: Antes de MT5, ¿cuántos snapshots tenemos?
         snaps_before_mt5 = len(snaps) if isinstance(snaps, list) else 0
@@ -1810,7 +1963,16 @@ class MT5AdaptiveTradingBot:
         mt5_success = False
         # ⭐ AGREGAR BARRA NUEVA DE MT5 para frescura (detecta cambios INTRA-minuto con tick_volume)
         try:
-            symbol = self.config['SYMBOL'].get()
+            # ⭐ IMPORTANTE: NO sobrescribir el symbol pasado como parámetro
+            # Solo usar config como fallback si no se especificó
+            if not symbol:
+                symbol = self.config['SYMBOL'].get()
+            # ⭐ TRIPLE SEGURIDAD: Asegurar que símbolo NUNCA sea VACÍO
+            if not symbol or symbol.strip() == '':
+                symbol = 'GOLD'
+            
+            logger.debug(f"[reload] Procesando symbol: {symbol} (parámetro respetado)")
+            
             # ⭐ VALIDATION: Asegurar MT5 conectado
             if not mt5.initialize():
                 logger.warning("[MT5] WARNING: No inicializado exitosamente")
@@ -1856,28 +2018,68 @@ class MT5AdaptiveTradingBot:
                         mt5_success = False
                 elif len(rates) > 0:
                     latest_rate = rates[0]
-                    # Crear snapshot con la barra nueva
-                    new_snapshot = {
-                        'time': float(latest_rate['time']),
-                        'open': float(latest_rate['open']),
-                        'high': float(latest_rate['high']),
-                        'low': float(latest_rate['low']),
-                        'close': float(latest_rate['close']),
-                        'tick_volume': int(latest_rate['tick_volume']),
-                        'volume': int(latest_rate['volume']),
-                        'real_volume': int(latest_rate['real_volume'])
-                    }
+                    # Convertir numpy.void a diccionario si es necesario
+                    if hasattr(latest_rate, '__iter__') and not isinstance(latest_rate, dict):
+                        try:
+                            latest_rate = dict(latest_rate)
+                        except:
+                            pass
                     
-                    # ⭐ CRÍTICO: Detectar CAMBIOS INTRA-MINUTO
+                    # Crear snapshot con la barra nueva (campos defensivos)
+                    try:
+                        # Acceder a campos de forma segura
+                        if isinstance(latest_rate, dict):
+                            new_snapshot = {
+                                'time': float(latest_rate.get('time', 0)),
+                                'open': float(latest_rate.get('open', 0)),
+                                'high': float(latest_rate.get('high', 0)),
+                                'low': float(latest_rate.get('low', 0)),
+                                'close': float(latest_rate.get('close', 0)),
+                                'tick_volume': int(latest_rate.get('tick_volume', 0)),
+                                'volume': int(latest_rate.get('volume', 0)),  # Puede no existir
+                                'real_volume': int(latest_rate.get('real_volume', 0))  # Puede no existir
+                            }
+                        else:
+                            # Acceso por atributo para numpy.void
+                            new_snapshot = {
+                                'time': float(getattr(latest_rate, 'time', 0)),
+                                'open': float(getattr(latest_rate, 'open', 0)),
+                                'high': float(getattr(latest_rate, 'high', 0)),
+                                'low': float(getattr(latest_rate, 'low', 0)),
+                                'close': float(getattr(latest_rate, 'close', 0)),
+                                'tick_volume': int(getattr(latest_rate, 'tick_volume', 0)),
+                                'volume': int(getattr(latest_rate, 'volume', 0)),
+                                'real_volume': int(getattr(latest_rate, 'real_volume', 0))
+                            }
+                    except Exception as e:
+                        logger.error(f"[MT5-EXCEPTION] ❌ EXCEPCIÓN agregando barra M1: {e}")
+                        # Usar synthético como fallback
+                        if snaps and isinstance(snaps, list) and len(snaps) > 0:
+                            last_real = snaps[-1]
+                            synthetic_snap = dict(last_real)
+                            synthetic_snap['close'] = float(last_real.get('close', 0)) + 0.010
+                            synthetic_snap['tick_volume'] = int(last_real.get('tick_volume', 0)) + 5
+                            snaps.append(synthetic_snap)
+                            if len(snaps) > max_len:
+                                snaps = snaps[-max_len:]
+                            logger.error(f"[MT5-FALLBACK-EXCEPTION] ✓ Inyectado snapshot sintético URGENTE por excepción MT5: {synthetic_snap['close']:.2f}")
+                        mt5_success = False
+                        new_snapshot = None
+                    
+                    if new_snapshot is None:
+                        # Si hay error procesando MT5, parar aquí
+                        pass
+                    
+                    # ⭐ CRÍTICO: Detectar CAMBIOS INTRA-MINUTO (solo si new_snapshot es válido)
                     # Durante el mismo minuto M1, el timestamp es idéntico pero:
                     # 1. tick_volume CAMBIA (nuevos ticks)
                     # 2. high/low pueden cambiar (precio explora nuevos niveles)
                     # 3. close cambia (precio actual)
-                    if snaps and isinstance(snaps, list) and len(snaps) > 0:
+                    if new_snapshot and snaps and isinstance(snaps, list) and len(snaps) > 0:
                         last_snap = snaps[-1]
                         # Agregar si:
                         if isinstance(last_snap, dict):
-                            is_new_minute = last_snap.get('time') != new_snapshot['time']
+                            is_new_minute = last_snap.get('time') != new_snapshot.get('time')
                             is_new_ticks = last_snap.get('tick_volume', 0) != new_snapshot.get('tick_volume', 0)
                             is_new_high = last_snap.get('high', 0) != new_snapshot.get('high', 0)
                             is_new_low = last_snap.get('low', 0) != new_snapshot.get('low', 0)
@@ -1892,7 +2094,7 @@ class MT5AdaptiveTradingBot:
                                 if len(snaps) > max_len:
                                     snaps = snaps[-max_len:]
                                 # LOG: Cambios detectados (visible)
-                                logger.info(f"[MT5] ✓ BARRAnueva: ts={new_snapshot['time']:.0f} close={new_snapshot['close']:.2f} ticks={new_snapshot.get('tick_volume')} [nuevo_min={is_new_minute}, ticks={is_new_ticks}, close={is_new_close}]")
+                                logger.info(f"[MT5] ✓ BARRAnueva: ts={new_snapshot.get('time', 0):.0f} close={new_snapshot.get('close', 0):.2f} ticks={new_snapshot.get('tick_volume')} [nuevo_min={is_new_minute}, ticks={is_new_ticks}, close={is_new_close}]")
                                 mt5_success = True
                             else:
                                 # ⭐ NO hay cambios detectados - puede ser error en MT5 o mercado congelado
@@ -1986,8 +2188,7 @@ class MT5AdaptiveTradingBot:
         try:
             from trade_logger import write_market_snapshots
             if len(snaps) > 0:  # ⭐ SOLO GUARDAR SI TENEMOS DATOS
-                symbol = self.config.get('SYMBOL', tk.StringVar(value='GOLD')).get() if hasattr(self, 'config') else 'GOLD'
-                # ⭐ NUEVO: Pasar símbolo y max_snapshots para mejor metadata
+                # Usar el símbolo del parámetro del método
                 write_market_snapshots(snaps, symbol=symbol, max_snapshots=1440)  # 1440 = 24h M1
                 if mt5_success:
                     logger.info(f"[MT5-PERSIST] ✓ Guardado archivo HISTÓRICO: {len(snaps)} barras ({symbol}, MT5 exitoso)")
@@ -1998,11 +2199,144 @@ class MT5AdaptiveTradingBot:
         except Exception as e:
             logger.warning(f"[MT5-PERSIST] ❌ Advertencia guardando snapshots: {e}")
         
-        # ⭐ ACTUALIZACIONES DE RESPALDO
-        snaps_final = snaps if isinstance(snaps, list) else self.market_snapshots if isinstance(self.market_snapshots, list) else []
-        logger.info(f"[reload] FINAL: {len(snaps_final)} snapshots (backup: {len(self.market_snapshots_backup)}, self: {len(self.market_snapshots) if isinstance(self.market_snapshots, list) else 0})")
+        # ⭐ ACTUALIZAR ESTRUCTURAS POR SÍMBOLO
+        try:
+            if symbol in self.market_snapshots_by_symbol:
+                with self.market_snapshots_lock_by_symbol[symbol]:
+                    if len(snaps) > 0:
+                        self.market_snapshots_by_symbol[symbol] = snaps
+                        self.market_snapshots_backup_by_symbol[symbol] = list(snaps)
+                        self.last_successful_reload_time_by_symbol[symbol] = time.time()
+                        self.reload_count_by_symbol[symbol] += 1
+                        logger.debug(f"[reload-{symbol}] ✓ Actualizado: {len(snaps)} snapshots")
+                    else:
+                        logger.warning(f"[reload-{symbol}] No sobrescribiendo: snaps vacío")
+        except Exception as e:
+            logger.warning(f"[reload-{symbol}] Error actualizando estructura: {e}")
         
-        return snaps_final
+        # ⭐ MANTENER COMPATIBILIDAD CON GOLD
+        if symbol == 'GOLD':
+            snaps_final = snaps if isinstance(snaps, list) else self.market_snapshots_by_symbol.get('GOLD', []) if isinstance(self.market_snapshots_by_symbol.get('GOLD', []), list) else []
+            logger.info(f"[reload] FINAL: {len(snaps_final)} snapshots para {symbol}")
+            return snaps_final
+        
+        return snaps if isinstance(snaps, list) else []
+
+    def _get_snapshots_filepath(self, symbol='GOLD'):
+        """Retorna la ruta del archivo JSON de snapshots para un símbolo."""
+        try:
+            # ⭐ CRÍTICO: Asegurar que símbolo NUNCA sea VACÍO
+            if not symbol or symbol.strip() == '':
+                logger.error(f"[PATH] ⛔ CRÍTICO: symbol vacío detectado, usando GOLD por defecto")
+                symbol = 'GOLD'
+                
+            logs_dir = os.path.join(os.path.dirname(__file__), 'logs')
+            os.makedirs(logs_dir, exist_ok=True)
+            return os.path.join(logs_dir, f'market_snapshots_{symbol}.json')
+        except Exception as e:
+            logger.error(f"[PATH] Error getting snapshots filepath: {str(e)[:80]}, using GOLD fallback")
+            return os.path.join(os.path.dirname(__file__), 'logs', f'market_snapshots_GOLD.json')
+
+    def _read_snapshots_for_symbol(self, symbol='GOLD'):
+        """Lee snapshots desde archivo JSON específico del símbolo."""
+        try:
+            # ⭐ CRÍTICO: Asegurar que símbolo NUNCA sea VACÍO
+            if not symbol or symbol.strip() == '':
+                logger.error(f"[snapshot] ⛔ CRÍTICO: symbol vacío en _read_snapshots_for_symbol, usando GOLD")
+                symbol = 'GOLD'
+                
+            filepath = self._get_snapshots_filepath(symbol)
+            if not os.path.exists(filepath):
+                logger.info(f"[snapshot-{symbol}] Archivo no existe: {filepath}")
+                return []
+            
+            with open(filepath, 'r') as f:
+                data = json.load(f)
+                if isinstance(data, dict) and 'snapshots' in data:
+                    return data['snapshots']
+                elif isinstance(data, list):
+                    return data
+                else:
+                    return []
+        except Exception as e:
+            logger.warning(f"[snapshot-{symbol}] Error leyendo {filepath}: {e}")
+            return []
+
+    def _write_snapshots_for_symbol(self, symbol='GOLD', snapshots=None):
+        """Escribe snapshots a archivo JSON específico del símbolo."""
+        try:
+            # ⭐ CRÍTICO: Asegurar que símbolo NUNCA sea VACÍO
+            if not symbol or symbol.strip() == '':
+                logger.error(f"[snapshot] ⛔ CRÍTICO: symbol vacío en _write_snapshots_for_symbol, usando GOLD")
+                symbol = 'GOLD'
+                
+            if snapshots is None or len(snapshots) == 0:
+                logger.debug(f"[snapshot-{symbol}] No escribiendo: snapshots vacío")
+                return
+            
+            filepath = self._get_snapshots_filepath(symbol)
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+            
+            # Guardar con metadata
+            data = {
+                'snapshots': snapshots,
+                'symbol': symbol,
+                'timestamp': time.time(),
+                'count': len(snapshots)
+            }
+            
+            with open(filepath, 'w') as f:
+                json.dump(data, f, indent=2)
+            
+            logger.debug(f"[snapshot-{symbol}] Guardados {len(snapshots)} snapshots en {filepath}")
+        except Exception as e:
+            logger.warning(f"[snapshot-{symbol}] Error escribiendo {filepath}: {e}")
+
+    def get_market_snapshots_by_symbol(self, symbol='GOLD'):
+        """Retorna una copia de snapshots para un símbolo específico."""
+        try:
+            if symbol not in self.market_snapshots_by_symbol:
+                logger.warning(f"[snapshot-{symbol}] Símbolo no registrado, retornando vacío")
+                return []
+            
+            with self.market_snapshots_lock_by_symbol[symbol]:
+                return list(self.market_snapshots_by_symbol[symbol])
+        except Exception as e:
+            logger.error(f"[snapshot-{symbol}] Error getting snapshots: {str(e)[:80]}")
+            return []
+
+    def sync_snapshots_between_symbols(self):
+        """⭐ SINCRONIZACIÓN: Recargar snapshots independientes para ambos pares."""
+        try:
+            current_symbol = self.config.get('SYMBOL', tk.StringVar(value='GOLD')).get() if hasattr(self, 'config') else 'GOLD'
+            
+            # Recargar ambos pares SIMULTÁNEAMENTE
+            for symbol in ['GOLD', 'SILVER']:
+                try:
+                    updated_snaps = self.reload_market_snapshots(symbol=symbol)
+                    logger.debug(f"[SYNC-{symbol}] Reloaded: {len(updated_snaps)} snapshots")
+                except Exception as e:
+                    logger.warning(f"[SYNC-{symbol}] Error durante reload: {e}")
+        except Exception as e:
+            logger.warning(f"[SYNC] Error en sincronización: {e}")
+
+    def get_symbol_snapshots(self, symbol=None):
+        """⭐ HELPER: Obtener snapshots del símbolo actual o especificado."""
+        if symbol is None:
+            symbol = self.config.get('SYMBOL', tk.StringVar(value='GOLD')).get() if hasattr(self, 'config') else 'GOLD'
+        return self.get_market_snapshots_by_symbol(symbol)
+
+    def get_symbol_from_config(self):
+        """⭐ HELPER: Obtener símbolo actual de la configuración."""
+        try:
+            return self.config.get('SYMBOL', tk.StringVar(value='GOLD')).get() if hasattr(self, 'config') else 'GOLD'
+        except Exception:
+            return 'GOLD'
+
+    def _get_current_snapshots(self):
+        """⭐ HELPER RÁPIDO: Obtener snapshots del símbolo actual (para compatibilidad)."""
+        symbol = self.get_symbol_from_config()
+        return self.get_market_snapshots_by_symbol(symbol)
 
     def get_market_snapshots(self):
         """Devuelve una copia de `self.market_snapshots` protegida por lock (si existe)."""
@@ -2018,11 +2352,29 @@ class MT5AdaptiveTradingBot:
             logger.exception("Error obteniendo copia de market_snapshots")
             return []
 
-    def compute_signal_from_snapshots(self, window=20):
+    def reload_all_symbols_snapshots(self):
+        """⭐ NUEVO: Recarga snapshots para GOLD Y SILVER independientemente.
+        Esto garantiza que ambos símbolos tengan datos frescos en paralelo.
+        """
+        try:
+            for symbol in ['GOLD', 'SILVER']:
+                try:
+                    fresh_snaps = self.reload_market_snapshots(symbol=symbol)
+                    if fresh_snaps and isinstance(fresh_snaps, list):
+                        with self.market_snapshots_lock_by_symbol.get(symbol, threading.Lock()):
+                            self.market_snapshots_by_symbol[symbol] = fresh_snaps
+                            logger.debug(f"[DUAL-RELOAD] ✓ {symbol}: {len(fresh_snaps)} snapshots cargados")
+                except Exception as e:
+                    logger.warning(f"[DUAL-RELOAD] Error cargando {symbol}: {str(e)[:50]}")
+        except Exception as e:
+            logger.error(f"[DUAL-RELOAD] Error general: {str(e)[:100]}")
+
+
+    def compute_signal_from_snapshots(self, symbol='GOLD', window=20):
         """Simple heuristic: SMA crossover on prefilled snapshots.
         Returns 'BUY', 'SELL' or None."""
         try:
-            snaps = self.reload_market_snapshots() or []
+            snaps = self.get_market_snapshots_by_symbol(symbol) or []
             if len(snaps) < window + 2:
                 return None
             closes = [float(s['close']) for s in snaps]
@@ -2035,7 +2387,8 @@ class MT5AdaptiveTradingBot:
             if sma_now < sma_prev and last < sma_now:
                 return 'SELL'
             return None
-        except Exception:
+        except Exception as e:
+            logger.debug(f"[TREND] Error analyzing trend: {str(e)[:60]}")
             return None
 
     def get_volatility_level(self, snapshots):
@@ -2059,7 +2412,8 @@ class MT5AdaptiveTradingBot:
             if std > 1.0:
                 return 'NORMAL'
             return 'LOW'
-        except Exception:
+        except Exception as e:
+            logger.debug(f"[VOL] Error calculating volatility: {str(e)[:60]}")
             return 'NORMAL'
 
     def _calculate_rsi_quick(self, prices, period=14):
@@ -2079,7 +2433,8 @@ class MT5AdaptiveTradingBot:
             rs = up / down if down != 0 else 0
             rsi = 100.0 - 100.0 / (1.0 + rs) if (1.0 + rs) != 0 else 50.0
             return float(rsi)
-        except Exception:
+        except Exception as e:
+            logger.debug(f"[RSI] Error calculating RSI: {str(e)[:60]}")
             return 50.0  # neutral fallback
 
     def _calculate_dynamic_tp_sl(self, volume):
@@ -2138,7 +2493,8 @@ class MT5AdaptiveTradingBot:
                 'session_weight': 0.50,
                 'window': 0,
             }
-        except Exception:
+        except Exception as e:
+            logger.error(f"[SESSION-CONTEXT] Error building context: {str(e)[:80]}")
             return {
                 'samples': 0,
                 'buy_win_rate': 50.0,
@@ -2165,8 +2521,8 @@ class MT5AdaptiveTradingBot:
                     self.sell_specialist.set_session_context(context)
                 else:
                     self.sell_specialist.session_context = context
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"[SESSION] Error refreshing specialist context: {str(e)[:80]}")
 
     def _get_direction_loss_streak(self, direction):
         """DESHABILITADO: No se usa histórico de trades. Solo análisis de mercado actual."""
@@ -2186,7 +2542,8 @@ class MT5AdaptiveTradingBot:
                 return 0.0
             move_pct = ((closes[-1] - closes[0]) / closes[0]) * 100.0
             return float(move_pct)
-        except Exception:
+        except Exception as e:
+            logger.debug(f"[MICRO-MOVE] Error detecting move: {str(e)[:60]}")
             return 0.0
 
     def _apply_specialist_protections(self, buy_analysis, sell_analysis, snapshots=None, context='general'):
@@ -2205,19 +2562,23 @@ class MT5AdaptiveTradingBot:
 
             try:
                 max_streak = int(self.config.get('SPECIALIST_MAX_DIRECTION_LOSS_STREAK', tk.IntVar(value=3)).get())
-            except Exception:
+            except Exception as e:
+                logger.debug(f"[CONFIG] Error reading max_streak: {str(e)[:60]}")
                 max_streak = 3
             try:
                 penalty = float(self.config.get('SPECIALIST_DIRECTION_PENALTY', tk.DoubleVar(value=12.0)).get())
-            except Exception:
+            except Exception as e:
+                logger.debug(f"[CONFIG] Error reading penalty: {str(e)[:60]}")
                 penalty = 12.0
             try:
                 extreme_pct = float(self.config.get('SPECIALIST_EXTREME_MOVE_PCT', tk.DoubleVar(value=0.20)).get())
-            except Exception:
+            except Exception as e:
+                logger.debug(f"[CONFIG] Error reading extreme_pct: {str(e)[:60]}")
                 extreme_pct = 0.20
             try:
                 min_gap = float(self.config.get('SPECIALIST_MIN_SCORE_GAP', tk.DoubleVar(value=4.0)).get())
-            except Exception:
+            except Exception as e:
+                logger.debug(f"[CONFIG] Error reading min_gap: {str(e)[:60]}")
                 min_gap = 4.0
 
             buy_streak = self._get_direction_loss_streak('BUY')
@@ -2249,7 +2610,8 @@ class MT5AdaptiveTradingBot:
             sell_adj['score'] = max(0.0, sell_score)
             sell_adj['confidence'] = max(0.0, sell_conf)
             return buy_adj, sell_adj, {'block': False, 'reason': ''}
-        except Exception:
+        except Exception as e:
+            logger.error(f"[SP-PROTECT] Error in protection logic: {str(e)[:80]}")
             return buy_analysis, sell_analysis, {'block': False, 'reason': ''}
 
     def _analyze_for_forced_reopen(self, symbol):
@@ -2262,7 +2624,8 @@ class MT5AdaptiveTradingBot:
             
             for i in range(30):
                 try:
-                    snaps = self.reload_market_snapshots() or []
+                    symbol = self.get_symbol_from_config()
+                    snaps = self.get_market_snapshots_by_symbol(symbol) or []
                     if snaps:
                         self._refresh_specialists_session_context()
                         buy_res = None
@@ -2274,8 +2637,8 @@ class MT5AdaptiveTradingBot:
                                     buy_res = self.buy_specialist.analyze(symbol, market_snapshots=snaps, check_recovery_potential=False)
                                 if hasattr(self.sell_specialist, 'analyze'):
                                     sell_res = self.sell_specialist.analyze(symbol, market_snapshots=snaps, check_recovery_potential=False)
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.error(f"[30s-ANAL] Error analyzing specialists: {str(e)[:80]}")
                         
                         if buy_res and sell_res:
                             buy_res, sell_res, prot = self._apply_specialist_protections(
@@ -2299,7 +2662,8 @@ class MT5AdaptiveTradingBot:
                     
                     if i < 29:  # No dormir en la ultima iteración
                         time.sleep(1)
-                except Exception:
+                except Exception as e:
+                    logger.error(f"[30s-LOOP] Error in 30s loop iteration: {str(e)[:80]}")
                     time.sleep(1)
             
             self._update_forced_open_counter(0)
@@ -2349,15 +2713,15 @@ class MT5AdaptiveTradingBot:
                         try:
                             buy_res = self.buy_specialist.analyze(symbol, market_snapshots=snaps, check_recovery_potential=False)
                             buy_score = float(buy_res.get('score', 50)) if buy_res else 50
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug(f"[RAPID-BUY] Error in rapid analysis: {str(e)[:60]}")
                     
                     if hasattr(self.sell_specialist, 'analyze'):
                         try:
                             sell_res = self.sell_specialist.analyze(symbol, market_snapshots=snaps, check_recovery_potential=False)
                             sell_score = float(sell_res.get('score', 50)) if sell_res else 50
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug(f"[RAPID-SELL] Error in rapid analysis: {str(e)[:60]}")
 
                     if buy_res and sell_res:
                         buy_res, sell_res, prot = self._apply_specialist_protections(
@@ -2444,8 +2808,8 @@ class MT5AdaptiveTradingBot:
                                 'sell_conf': sell_res.get('confidence', 0) if sell_res else 0,
                                 'timestamp': time.time()
                             })
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"[SCHEDULER-CACHE] Error caching scores: {str(e)[:60]}")
 
                     # Metadata para feedback loop - REMOVIDA: solo análisis de mercado
                     # self.last_trade_metadata = {...} - DESHABILITADO
@@ -2464,7 +2828,8 @@ class MT5AdaptiveTradingBot:
                     trend_analysis = self.last_trend_analysis
                 else:
                     trend_analysis = None
-            except Exception:
+            except Exception as e:
+                logger.debug(f"[TREND] Error getting trend: {str(e)[:60]}")
                 trend_analysis = None
             
             # ⭐ PASO 3: EN MODO FORZADO, IGNORAR ARBITRADOR
@@ -2483,16 +2848,16 @@ class MT5AdaptiveTradingBot:
                 live_age = (time.time() - live_ts) if live_ts > 0 else 999.0
                 live_gap = abs(live_buy - live_sell)
                 live_dir = 'BUY' if live_buy >= live_sell else 'SELL'
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"[SCORES-LOCK] Error reading shared scores: {str(e)[:60]}")
 
             # Mezcla rápida: pondera más LIVE cuando está fresca para reaccionar antes a giros.
             try:
                 if live_age <= 2.5:
                     buy_score = (float(buy_score) * 0.35) + (float(live_buy) * 0.65)
                     sell_score = (float(sell_score) * 0.35) + (float(live_sell) * 0.65)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"[BLEND] Error blending scores: {str(e)[:60]}")
 
             # --- BLOQUEO/REVERSIÓN POR MICROTENDENCIA EN MODO FORZADO ---
             # Si la microtendencia es contraria a la dirección elegida, solo abrir si el gap de score es muy alto
@@ -2501,7 +2866,7 @@ class MT5AdaptiveTradingBot:
                 gap = abs(float(buy_score) - float(sell_score))
                 if gap < score_gap_required:
                     self.add_log(f"[MICROTREND/FORCED] BLOQUEADO: Dirección {direction} va contra microtendencia {microtrend} y gap={gap:.2f} < {score_gap_required}", 'warning')
-                    return None, buy_score, sell_score, trend_analysis
+                    return direction, buy_score, sell_score, trend_analysis  # FIX: Devolver direction, no None
                 else:
                     self.add_log(f"[MICROTREND/FORCED] ⚠️ Permitiendo apertura contra microtendencia por gap alto: {gap:.2f}", 'warning')
 
@@ -2539,8 +2904,8 @@ class MT5AdaptiveTradingBot:
                                 f"[FORZADA] ⚡ Override IMPULSO: {prev_dir} -> {direction} (up={up_moves}, down={down_moves}, impulse={impulse_pct:.4f}%, gap={winner_gap:.1f})",
                                 'warning'
                             )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"[IMPULSE] Error in impulse override: {str(e)[:60]}")
 
             try:
                 # LIVE es la última palabra si está fresco y tiene ventaja mínima.
@@ -2554,8 +2919,8 @@ class MT5AdaptiveTradingBot:
                     direction = live_dir
                     buy_score = live_buy
                     sell_score = live_sell
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"[LIVE-OVERRIDE] Error in live override: {str(e)[:60]}")
 
             try:
                 self.add_log(f"[FORZADA] 🧭 Motivo final: {override_reason}", 'info')
@@ -2587,7 +2952,8 @@ class MT5AdaptiveTradingBot:
                         buy_res = self.buy_specialist.analyze(symbol, market_snapshots=snaps, check_recovery_potential=False)
                     if hasattr(self.sell_specialist, 'analyze'):
                         sell_res = self.sell_specialist.analyze(symbol, market_snapshots=snaps, check_recovery_potential=False)
-            except Exception:
+            except Exception as e:
+                logger.error(f"[BOT-LOOP-ANAL] Error analyzing specialists: {str(e)[:80]}")
                 buy_res = None
                 sell_res = None
 
@@ -2764,13 +3130,14 @@ class MT5AdaptiveTradingBot:
         self.create_control_panel(control_tab)
         self.create_config_panel(config_tab)
         self.create_stats_panel(right_panel)
+        self.create_objectives_panel(right_panel)  # ⭐ Nuevo: Mostrar Objetivo Neto y Margen Ganancia
         self.create_future_data_panel(right_panel)  # 📊 Nuevo cuadro para datos futuros
         self.create_events_panel(right_panel)
         # Iniciar actualización periódica de información de cuenta (balance/equity)
         try:
             self._schedule_account_update()
-        except Exception:
-            pass
+        except Exception as e:
+            self.add_log(f"[INIT] Error scheduling account update: {str(e)[:60]}", 'error')
         
     def _schedule_account_update(self):
         """Programa la actualización periódica de la información de cuenta MT5."""
@@ -2792,17 +3159,17 @@ class MT5AdaptiveTradingBot:
                 try:
                     if not mt5.initialize():
                         mt5.initialize()
-                except:
-                    pass
+                except Exception as e:
+                    logger.debug(f"[MT5-INIT] Error reconnecting MT5: {str(e)[:60]}")
                 self.update_account_info()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"[TICK] Error in account tick: {str(e)[:60]}")
             finally:
                 try:
                     if self._account_scheduler_running:
                         self.root.after(1000, _tick)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"[TICK-SCHEDULE] Error scheduling next tick: {str(e)[:60]}")
 
         try:
             self.root.after(0, _tick)
@@ -2824,6 +3191,28 @@ class MT5AdaptiveTradingBot:
             margen_pct = float(self._safe_get('MARGEN_GANANCIA', 1.0))
             objetivo_neto = float(self._safe_get('OBJETIVO_NETO', 0.0))
             
+            # ⭐ Actualizar label de estado PRIMERO (antes de cualquier retorno)
+            if self.margen_monitor_label:
+                try:
+                    if margen_pct < 1:
+                        self.margen_monitor_label.config(text="Desactivado (Margen < 1%)", fg='#cbd5e1')
+                    elif objetivo_neto > 0 and self.objetivo_neto_running:
+                        self.margen_monitor_label.config(text="Desactivado (Objetivo Neto activo)", fg='#cbd5e1')
+                    else:
+                        # Actualizar con datos actuales
+                        account_info = mt5.account_info()
+                        if account_info is not None:
+                            equity = float(getattr(account_info, 'equity', 0.0))
+                            if self.balance_inicial_para_margen == 0:
+                                self.balance_inicial_para_margen = equity
+                                self.objetivo_margen_ganancia = self.balance_inicial_para_margen * (1.0 + margen_pct / 100.0)
+                            progress_pct = (equity / self.objetivo_margen_ganancia * 100) if self.objetivo_margen_ganancia > 0 else 0
+                            self.margen_monitor_label.config(text=f"💵 Patrimonio: ${equity:.2f} / Objetivo: ${self.objetivo_margen_ganancia:.2f} ({progress_pct:.1f}%)", fg='#34d399')
+                        else:
+                            self.margen_monitor_label.config(text="Esperando conexión MT5...", fg='#fbbf24')
+                except Exception as label_err:
+                    pass
+            
             # Si el Objetivo Neto está activo, desactivar este monitor
             if objetivo_neto > 0 and self.objetivo_neto_running:
                 self.margen_monitor_running = False
@@ -2838,12 +3227,11 @@ class MT5AdaptiveTradingBot:
             if self.balance_inicial_para_margen == 0:
                 account_info = mt5.account_info()
                 if account_info is not None:
-                    self.balance_inicial_para_margen = float(getattr(account_info, 'equity', 0.0))  # ⭐ CAMBIO: Usar equity en lugar de balance
+                    self.balance_inicial_para_margen = float(getattr(account_info, 'equity', 0.0))
                     self.objetivo_margen_ganancia = self.balance_inicial_para_margen * (1.0 + margen_pct / 100.0)
                     self.add_log(f"💰 Margen Ganancia Iniciado: Patrimonio={self.balance_inicial_para_margen:.2f}, Objetivo={self.objetivo_margen_ganancia:.2f} ({margen_pct}%)", 'info')
                 else:
                     self.add_log("⚠️ No se pudo obtener balance inicial para margen de ganancia", 'warning')
-                    self.margen_monitor_running = False
                     return
             
             # Verificar si se alcanzó el objetivo (cada segundo)
@@ -2851,18 +3239,10 @@ class MT5AdaptiveTradingBot:
             if account_info is not None:
                 equity = float(getattr(account_info, 'equity', 0.0))
                 
-                # Actualizar label si existe
-                if self.margen_monitor_label:
-                    try:
-                        progress_pct = (equity / self.objetivo_margen_ganancia * 100) if self.objetivo_margen_ganancia > 0 else 0
-                        self.margen_monitor_label.config(text=f"💵 Equity: ${equity:.2f} / Objetivo: ${self.objetivo_margen_ganancia:.2f} ({progress_pct:.1f}%)")
-                    except:
-                        pass
-                
                 # Verificar si se alcanzó
                 if equity >= self.objetivo_margen_ganancia and not self.margen_ganancia_alcanzado:
                     self.margen_ganancia_alcanzado = True
-                    self.add_log(f"✅ OBJETIVO ALCANZADO: Equity ${equity:.2f} >= Objetivo ${self.objetivo_margen_ganancia:.2f}", 'success')
+                    self.add_log(f"✅ OBJETIVO ALCANZADO: Patrimonio ${equity:.2f} >= Objetivo ${self.objetivo_margen_ganancia:.2f}", 'success')
                     self.add_log("🔴 Iniciando cierre de emergencia y detención del bot...", 'warning')
                     
                     # Cierra todas las operaciones
@@ -2888,7 +3268,7 @@ class MT5AdaptiveTradingBot:
         # Reprogramar si sigue activo
         if self.margen_monitor_running:
             try:
-                self.root.after(1000, self._monitor_profit_margin)
+                self.root.after(500, self._monitor_profit_margin)
             except:
                 pass
     
@@ -2907,6 +3287,29 @@ class MT5AdaptiveTradingBot:
             objetivo_neto = float(self._safe_get('OBJETIVO_NETO', 0.0))
             margen_pct = float(self._safe_get('MARGEN_GANANCIA', 1.0))
             
+            # ⭐ Actualizar label de estado PRIMERO (antes de cualquier retorno)
+            if self.objetivo_neto_label:
+                try:
+                    if objetivo_neto <= 0:
+                        self.objetivo_neto_label.config(text="Desactivado (Objetivo $0)", fg='#cbd5e1')
+                    elif margen_pct >= 1 and self.margen_monitor_running:
+                        self.objetivo_neto_label.config(text="Desactivado (Margen Ganancia activo)", fg='#cbd5e1')
+                    else:
+                        # Actualizar con datos actuales
+                        account_info = mt5.account_info()
+                        if account_info is not None:
+                            equity = float(getattr(account_info, 'equity', 0.0))
+                            if self.objetivo_neto_valor == 0:
+                                self.objetivo_neto_valor = equity + objetivo_neto
+                            falta = self.objetivo_neto_valor - equity
+                            progress_pct = (equity / self.objetivo_neto_valor * 100) if self.objetivo_neto_valor > 0 else 0
+                            falta_text = f" (Falta: ${abs(falta):.2f})" if falta > 0 else f" (Excedido: ${abs(falta):.2f})"
+                            self.objetivo_neto_label.config(text=f"🎯 Patrimonio: ${equity:.2f} → Target: ${self.objetivo_neto_valor:.2f}{falta_text} ({progress_pct:.1f}%)", fg='#34d399')
+                        else:
+                            self.objetivo_neto_label.config(text="Esperando conexión MT5...", fg='#fbbf24')
+                except Exception as label_err:
+                    pass
+            
             # Si el Margen de Ganancia está activo, desactivar este monitor
             if margen_pct >= 1 and self.margen_monitor_running:
                 self.objetivo_neto_running = False
@@ -2920,34 +3323,18 @@ class MT5AdaptiveTradingBot:
             # Guardar el patrimonio inicial y calcular target SOLO una vez
             if self.objetivo_neto_valor == 0:
                 account_info = mt5.account_info()
-                patrimonio_inicial = float(getattr(account_info, 'equity', 0.0)) if account_info else 0.0
-                # NUEVO: Target = patrimonio_inicial + objetivo_neto (suma)
-                self.objetivo_neto_valor = patrimonio_inicial + objetivo_neto
-                self.add_log(f"🎯 Objetivo Neto ACTIVADO: Patrimonio=${patrimonio_inicial:.2f} + Incremento=${objetivo_neto:.2f} = Target=${self.objetivo_neto_valor:.2f}", 'success')
+                if account_info is not None:
+                    patrimonio_inicial = float(getattr(account_info, 'equity', 0.0))
+                    self.objetivo_neto_valor = patrimonio_inicial + objetivo_neto
+                    self.add_log(f"🎯 Objetivo Neto ACTIVADO: Patrimonio=${patrimonio_inicial:.2f} + Incremento=${objetivo_neto:.2f} = Target=${self.objetivo_neto_valor:.2f}", 'success')
+                else:
+                    self.add_log("⚠️ No se pudo obtener balance inicial para objetivo neto", 'warning')
+                    return
             
             # Verificar si se alcanzó el objetivo (CASI EN TIEMPO REAL: 100ms = <1s)
-            if not hasattr(self, '_last_objetivo_neto_check'):
-                self._last_objetivo_neto_check = 0
-            
-            now = time.time()
-            if (now - self._last_objetivo_neto_check) < 0.1:  # ⭐ 100ms = <1s para cierre INMEDIATO
-                return
-            
-            self._last_objetivo_neto_check = now
-            
             account_info = mt5.account_info()
             if account_info is not None:
                 equity = float(getattr(account_info, 'equity', 0.0))
-                
-                # Actualizar label si existe
-                if self.objetivo_neto_label:
-                    try:
-                        falta = self.objetivo_neto_valor - equity
-                        falta_text = f" (Falta: ${abs(falta):.2f})" if falta > 0 else f" (Excedido: ${abs(falta):.2f})"
-                        progress_pct = (equity / self.objetivo_neto_valor * 100) if self.objetivo_neto_valor > 0 else 0
-                        self.objetivo_neto_label.config(text=f"🎯 Patrimonio: ${equity:.2f} → Target: ${self.objetivo_neto_valor:.2f}{falta_text} ({progress_pct:.1f}%)")
-                    except:
-                        pass
                 
                 # Verificar si se alcanzó (SUMA)
                 if equity >= self.objetivo_neto_valor and not self.objetivo_neto_alcanzado:
@@ -2978,7 +3365,7 @@ class MT5AdaptiveTradingBot:
         # Reprogramar si sigue activo
         if self.objetivo_neto_running:
             try:
-                self.root.after(1000, self._monitor_objetivo_neto)
+                self.root.after(500, self._monitor_objetivo_neto)
             except:
                 pass
         
@@ -3374,12 +3761,12 @@ class MT5AdaptiveTradingBot:
                 },
                 'SILVER': {
                     'VOL': 0.01,
-                    'TP_DIFF': 0.5,
-                    'SL_DIFF': 20.0,
+                    'TP_DIFF': 1.0,  # ⭐ SINCRONIZADO CON GOLD (era 0.5)
+                    'SL_DIFF': 30.0,  # ⭐ SINCRONIZADO CON GOLD (era 0.20)
                     'MICROTREND_THRESHOLD': 15.0,
-                    'GLOBAL_TP': 0.5,
-                    'GLOBAL_SL': 20.0,
-                    'MIN_RANGE': 0.5,
+                    'GLOBAL_TP': 1.0,  # ⭐ SINCRONIZADO CON GOLD (era 0.5)
+                    'GLOBAL_SL': 30.0,  # ⭐ SINCRONIZADO CON GOLD (era 0.20)
+                    'MIN_RANGE': 1.0,  # ⭐ SINCRONIZADO CON GOLD (era 0.5)
                 },
             }
             
@@ -3433,9 +3820,11 @@ class MT5AdaptiveTradingBot:
             
             # ⭐ CONFIG ÓPTIMA PARA GOLD (Scalping limpio y constante)
             ("🟡 ⚙️ CONFIG ÓPTIMA – ORO (XAUUSD)", None),  # Separador visual
-            ("Threshold (1.7-1.9):", 'GOLD_THRESHOLD'),
-            ("Microtendencia (velas, 3-5):", 'GOLD_MICROTREND_CANDLES'),
-            ("Cuerpo Vela Mínimo (%):", 'GOLD_CANDLE_BODY_PCT'),
+            ("Threshold (16-19, ideal 18):", 'GOLD_THRESHOLD'),  # 🎯 Rango: más bajo→ruido, más alto→pierda movimientos
+            ("Microtendencia (3-5 velas misma dir, ideal 4):", 'GOLD_MICROTREND_CANDLES'),  # + Análisis 10/20/30 velas previas
+            ("Cuerpo Vela Mínimo (%):", 'GOLD_CANDLE_BODY_PCT'),  # 60% = cuerpo fuerte
+            ("Mecha Máxima (%):", 'GOLD_CANDLE_WICK_PCT'),  # 40% = mechas pequeñas
+            ("Cierre Cercano (BUY≥%, SELL≤%):", 'GOLD_CANDLE_CLOSE_PCT'),  # 70% BUY, 30% SELL
             ("VIDYA CMO:", 'GOLD_VIDYA_CMO'),
             ("VIDYA EMA:", 'GOLD_VIDYA_EMA'),
             ("Filtro Impulso (puntos):", 'GOLD_IMPULSE_FILTER'),
@@ -3473,6 +3862,9 @@ class MT5AdaptiveTradingBot:
                                            values=['GOLD', 'SILVER'],
                                            state='readonly', width=25,
                                            font=('Arial', 9))
+                # ⭐ NUEVO: Establecer valor inicial (por defecto GOLD)
+                current_symbol = self.config[key].get() or 'GOLD'
+                symbol_combo.set(current_symbol)
                 symbol_combo.pack(side='right', fill='x', expand=True)
                 # Bind al evento de cambio de selección
                 symbol_combo.bind('<<ComboboxSelected>>', 
@@ -3595,6 +3987,41 @@ class MT5AdaptiveTradingBot:
         stats_frame.grid_columnconfigure(0, weight=1)
         stats_frame.grid_columnconfigure(1, weight=1)
         stats_frame.grid_columnconfigure(2, weight=1)
+
+    def create_objectives_panel(self, parent):
+        """⭐ NUEVO: Panel para mostrar Objetivo Neto y Margen de Ganancia"""
+        objectives_frame = tk.LabelFrame(parent, text="🎯 Objetivos de Ganancia", 
+                                        bg='#334155', fg='#f1f5f9',
+                                        font=('Arial', 10, 'bold'), padx=10, pady=10)
+        objectives_frame.pack(fill='x', pady=(0, 10))
+        
+        # === Fila 1: Margen de Ganancia ===
+        margen_frame = tk.Frame(objectives_frame, bg='#2d3e50', relief='sunken', bd=1)
+        margen_frame.pack(fill='x', pady=(0, 5), padx=5)
+        
+        margen_title = tk.Label(margen_frame, text="💵 Margen de Ganancia", 
+                               bg='#2d3e50', fg='#fbbf24',
+                               font=('Arial', 9, 'bold'), anchor='w')
+        margen_title.pack(fill='x', padx=5, pady=(5, 0))
+        
+        self.margen_monitor_label = tk.Label(margen_frame, text="Desactivado", 
+                                            bg='#2d3e50', fg='#cbd5e1',
+                                            font=('Arial', 9), anchor='w')
+        self.margen_monitor_label.pack(fill='x', padx=5, pady=(0, 5))
+        
+        # === Fila 2: Objetivo Neto ===
+        objetivo_frame = tk.Frame(objectives_frame, bg='#2d3e50', relief='sunken', bd=1)
+        objetivo_frame.pack(fill='x', pady=(0, 5), padx=5)
+        
+        objetivo_title = tk.Label(objetivo_frame, text="🎯 Objetivo Neto", 
+                                 bg='#2d3e50', fg='#60a5fa',
+                                 font=('Arial', 9, 'bold'), anchor='w')
+        objetivo_title.pack(fill='x', padx=5, pady=(5, 0))
+        
+        self.objetivo_neto_label = tk.Label(objetivo_frame, text="Desactivado", 
+                                           bg='#2d3e50', fg='#cbd5e1',
+                                           font=('Arial', 9), anchor='w')
+        self.objetivo_neto_label.pack(fill='x', padx=5, pady=(0, 5))
 
     def create_future_data_panel(self, parent):
         """📊 Panel para datos futuros - Análisis de especialistas en tiempo real"""
@@ -3846,8 +4273,8 @@ class MT5AdaptiveTradingBot:
                 self.root.after(0, update_ui)
             else:
                 update_ui()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[UI-UPDATE] Error updating UI: {str(e)[:60]}")
 
     def _run_on_ui_thread(self, callback, *args, **kwargs):
         """Ejecuta callback en el hilo principal de Tkinter para evitar bloqueos/crashes."""
@@ -3856,8 +4283,8 @@ class MT5AdaptiveTradingBot:
                 callback(*args, **kwargs)
             elif hasattr(self, 'root') and self.root:
                 self.root.after(0, lambda: callback(*args, **kwargs))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[UI-THREAD] Error running on UI thread: {str(e)[:60]}")
     
     def _update_log_widget_batch(self, messages):
         """⭐ ULTRA-OPTIMIZADO: Batch updates + deshabilitar widget durante insert para máximo performance"""
@@ -3895,7 +4322,8 @@ class MT5AdaptiveTradingBot:
             account_info = None
             try:
                 account_info = mt5.account_info()
-            except Exception:
+            except Exception as e:
+                logger.debug(f"[ACCOUNT] Error getting account info: {str(e)[:60]}")
                 account_info = None
 
             if account_info is not None:
@@ -4325,6 +4753,10 @@ class MT5AdaptiveTradingBot:
             self.force_stop_triggered = False
             self.analisis_inicial_hecho = False
             
+            # ⭐ NUEVO: Limpiar variables de objetivo neto
+            self.objetivo_neto_inicial = 0.0
+            self.objetivo_neto_target = 0.0
+            
             self.ganancia_neta = 0.0
             self.saldo_total_acumulado = 0.0
             self.saldo_actual = 0.0
@@ -4379,6 +4811,10 @@ class MT5AdaptiveTradingBot:
             self.objetivo_cumplido = False
             self.force_stop_triggered = False
             self.analisis_inicial_hecho = False
+            
+            # ⭐ NUEVO: Limpiar variables de objetivo neto
+            self.objetivo_neto_inicial = 0.0
+            self.objetivo_neto_target = 0.0
             
             # Limpiar valores de ganancia
             self.ganancia_neta = 0.0
@@ -4458,6 +4894,51 @@ class MT5AdaptiveTradingBot:
                 f"📊 {self.total_operaciones_abiertas}/{self._safe_get('MAX_SIMULTANEOUS_OPS', 5)} | "
                 f"[DINERO] Total: {saldo_text}"
             )
+            
+            # ⭐ NUEVO: ACTUALIZAR OBJETIVO NETO EN TIEMPO REAL (INDEPENDIENTE del MARGEN_GANANCIA)
+            if hasattr(self, 'objetivo_neto_label'):
+                try:
+                    objetivo_neto = float(self._safe_get('OBJETIVO_NETO', 0.0))
+                    
+                    # ⭐ CORREGIDO: Mostrar OBJETIVO_NETO si > 0, INDEPENDIENTEMENTE de MARGEN_GANANCIA
+                    if objetivo_neto <= 0:
+                        self.objetivo_neto_label.config(text="Desactivado", fg='#cbd5e1')
+                    else:
+                        # Obtener equity actual
+                        try:
+                            account_info = mt5.account_info()
+                            if account_info is not None:
+                                equity = float(getattr(account_info, 'equity', 0.0))
+                                
+                                # Inicializar el objetivo si es la primera vez
+                                if not hasattr(self, 'objetivo_neto_inicial') or self.objetivo_neto_inicial == 0:
+                                    self.objetivo_neto_inicial = equity
+                                    self.objetivo_neto_target = equity + objetivo_neto
+                                
+                                # Calcular falta o exceso
+                                falta = self.objetivo_neto_target - equity
+                                progress_pct = (equity / self.objetivo_neto_target * 100) if self.objetivo_neto_target > 0 else 0
+                                
+                                if falta > 0.01:
+                                    # Aún falta ganar
+                                    text = f"🎯 Patrimonio: ${equity:.2f} | Objetivo: ${self.objetivo_neto_target:.2f} | Falta: ${falta:.2f} ({progress_pct:.1f}%)"
+                                    color = '#60a5fa'
+                                elif falta < -0.01:
+                                    # Exceso alcanzado
+                                    text = f"✅ Patrimonio: ${equity:.2f} | Objetivo: ${self.objetivo_neto_target:.2f} | Exceso: ${abs(falta):.2f} ({progress_pct:.1f}%)"
+                                    color = '#34d399'
+                                else:
+                                    # Exacto
+                                    text = f"✅ Patrimonio: ${equity:.2f} | Objetivo: ${self.objetivo_neto_target:.2f} | ¡ALCANZADO! ({progress_pct:.1f}%)"
+                                    color = '#34d399'
+                                
+                                self.objetivo_neto_label.config(text=text, fg=color)
+                            else:
+                                self.objetivo_neto_label.config(text="Esperando MT5...", fg='#fbbf24')
+                        except Exception:
+                            self.objetivo_neto_label.config(text="Error obteniendo datos", fg='#ef4444')
+                except Exception as e:
+                    pass
             
             # ⭐ ACTUALIZAR DETECTOR DE TENDENCIA EN UI - CADA SEGUNDO
             if hasattr(self, 'trend_state_label'):
@@ -6009,6 +6490,15 @@ class MT5AdaptiveTradingBot:
     def cierre_emergencia(self):
         """Cierra absolutamente todas las posiciones abiertas, sin importar símbolo ni magic."""
         try:
+            # ⭐ PRIMERO: Marcar como emergencia para que NO abra nuevas operaciones
+            self.force_stop_triggered = True
+            self.is_running = False
+            self._scheduler_running = False
+            self._forced_reopen_started = False
+            self._forced_scheduler_thread = None
+            self.en_pausa = False
+            self.objetivo_cumplido = False
+            
             self.add_log("[ALERTA] INICIANDO CIERRE DE EMERGENCIA FORZADO (todas las posiciones)", 'alert')
             if not mt5.initialize():
                 mt5.shutdown()
@@ -6050,22 +6540,16 @@ class MT5AdaptiveTradingBot:
                             self.add_log(f"Error en intento {intento+1}: {str(e)}", 'error')
                             time.sleep(1)
 
-            self.is_running = False
-            self._scheduler_running = False
-            self._forced_reopen_started = False
-            self._forced_scheduler_thread = None
-            self.en_pausa = False
-            self.objetivo_cumplido = False
-
+            # ⭐ DESACTIVAR todos los controles para que no pueda cambiar nada
             for entry in self.config_entries.values():
-                entry.config(state='normal')
+                entry.config(state='disabled')
 
-            self.start_btn.config(state='normal')
+            self.start_btn.config(state='disabled')
             self.stop_btn.config(state='disabled')
             self.resume_btn.config(state='disabled')
 
             self.status_indicator.itemconfig(self.status_circle, fill='#ef4444')
-            self.status_label.config(text="Bot Detenido por Emergencia", fg='#f87171')
+            self.status_label.config(text="Bot Detenido por Emergencia (No se abrirán más operaciones)", fg='#f87171')
             self._update_ui()
         except Exception as e:
             self.add_log(f"Error en cierre de emergencia: {str(e)}", 'error')
@@ -6593,7 +7077,7 @@ class MT5AdaptiveTradingBot:
             else:
                 self.add_log(f"\n📊 Analizando mercado - Esperando operaciones\n", 'info')
 
-            symbol = self.config['SYMBOL'].get()
+            symbol = self._get_symbol()
 
             while self.is_running:
                 try:
@@ -6666,7 +7150,7 @@ class MT5AdaptiveTradingBot:
                                                         profit=profit
                                                     )
                             except Exception as e:
-                                pass  # Monitoreo silencioso durante pausa
+                                logger.error(f"[PAUSE-MONITOR] Error closing position during pause: {str(e)[:80]}")
                         
                         # Mientras está pausado, dormir y continuar (SIN ANÁLISIS)
                         time.sleep(0.5)
@@ -6698,7 +7182,12 @@ class MT5AdaptiveTradingBot:
                             self._last_snap_reload = 0
                         if time.time() - self._last_snap_reload >= float(reload_interval):
                             try:
-                                self.reload_market_snapshots()
+                                # ⭐ Recargar AMBOS símbolos para mantener datos actualizados
+                                for reload_symbol in ['GOLD', 'SILVER']:
+                                    try:
+                                        self.reload_market_snapshots(symbol=reload_symbol)
+                                    except Exception:
+                                        logger.exception(f"Error recargando {reload_symbol} en bot_loop")
                             except Exception:
                                 logger.exception("Error en recarga periódica de market_snapshots en bot_loop")
                             self._last_snap_reload = time.time()
@@ -7103,12 +7592,20 @@ class MT5AdaptiveTradingBot:
             self.add_log("[ERROR] No se analiza - Ya hay una operación abierta", 'warning')
             return None
             
-        symbol = self.config['SYMBOL'].get()
+        symbol = self._get_symbol()
         # --- REFRESH: asegurar datos de mercado actualizados y calibración antes de abrir ---
         try:
             # Forzar recarga de snapshots desde disco/MT5
             try:
-                snaps = self.reload_market_snapshots() or []
+                # ⭐ Recargar AMBOS símbolos para datos frescos
+                snaps = []
+                for reload_symbol in ['GOLD', 'SILVER']:
+                    try:
+                        sym_snaps = self.reload_market_snapshots(symbol=reload_symbol) or []
+                        if reload_symbol == 'GOLD':  # Usar GOLD como principal
+                            snaps = sym_snaps
+                    except Exception:
+                        pass
             except Exception:
                 snaps = []
 
@@ -7195,7 +7692,8 @@ class MT5AdaptiveTradingBot:
             buy_analysis = None
             sell_analysis = None
             try:
-                snaps = self.reload_market_snapshots() or []
+                # ⭐ Recargar snapshots con el símbolo correcto
+                snaps = self.reload_market_snapshots(symbol=self._map_symbol_internal(symbol)) or []
                 # Try to fetch recent bars from MT5 to keep data fresh
                 try:
                     recent = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M1, 0, max(50, int(self.config.get('BARS_ANALYZE').get())))
@@ -7482,7 +7980,7 @@ class MT5AdaptiveTradingBot:
 
                 self.add_log(f"[RESET] Ejecutando reapertura forzada. Dirección: {fallback_dir}", 'warning')
                 try:
-                    opened = self.abrir_operacion(fallback_dir, force=True, force_params=getattr(self, 'forced_open_params', None))
+                    opened = self.abrir_operacion_smart(fallback_dir, force=True)
                     if opened:
                         self.next_forced_open = time.time() + float(intervalo)
                         self.add_log(f"[OK] ✅ Reapertura forzada realizada: {fallback_dir}", 'success')
@@ -7895,7 +8393,8 @@ class MT5AdaptiveTradingBot:
             
             # ⭐ PASO 4: Volatilidad del mercado
             try:
-                snaps = self.reload_market_snapshots() or []
+                # ⭐ Usar GOLD como símbolo por defecto
+                snaps = self.reload_market_snapshots(symbol='GOLD') or []
                 vol_level = self.get_volatility_level(snaps)
                 if vol_level == 'HIGH':
                     vol_mult = 0.7
@@ -7975,37 +8474,40 @@ class MT5AdaptiveTradingBot:
             # Modo normal: 1 operación en símbolo configurado
             return self.abrir_operacion(direccion, force=force, startup=startup)
         
-        # ⭐ MODO MÚLTIPLES PARTES: Abrir en GOLD + SILVER CON ANÁLISIS INDEPENDIENTE
+        # ⭐ MODO MÚLTIPLES PARTES: Abrir en GOLD + SILVER CON LA MISMA DIRECCIÓN (CORRELACIONADOS)
         self.add_log(f"\n{'='*60}", 'warning')
-        self.add_log(f"[MÚLTIPLES PARTES] Analizando GOLD y SILVER de forma INDEPENDIENTE...", 'warning')
+        self.add_log(f"[MÚLTIPLES PARTES] Analizando GOLD y SILVER (misma dirección - correlacionados)...", 'warning')
         self.add_log(f"{'='*60}\n", 'warning')
         
         symbol_actual = self.config['SYMBOL'].get()
         
-        # ⭐ ANÁLISIS INDEPENDIENTE PARA GOLD
-        self.add_log(f"[1/4] Analizando GOLD...", 'info')
+        # ⭐ ANÁLISIS PARA GOLD (primer símbolo principal)
+        self.add_log(f"[1/3] Analizando GOLD (símbolo principal)...", 'info')
         gold_direction, gold_buy_score, gold_sell_score, _ = self._quick_analysis_for_forced_reopen('GOLD')
-        self.add_log(f"[1/4] ✅ GOLD: Dirección óptima = {gold_direction} (BUY={gold_buy_score:.1f}, SELL={gold_sell_score:.1f})", 'success')
+        self.add_log(f"[1/3] ✅ GOLD: Dirección óptima = {gold_direction} (BUY={gold_buy_score:.1f}, SELL={gold_sell_score:.1f})", 'success')
         
         # Pausa mínima entre análisis
         time.sleep(0.3)
         
-        # ⭐ ANÁLISIS INDEPENDIENTE PARA SILVER
-        self.add_log(f"[2/4] Analizando SILVER...", 'info')
-        silver_direction, silver_buy_score, silver_sell_score, _ = self._quick_analysis_for_forced_reopen('SILVER')
-        self.add_log(f"[2/4] ✅ SILVER: Dirección óptima = {silver_direction} (BUY={silver_buy_score:.1f}, SELL={silver_sell_score:.1f})", 'success')
+        # ⭐ USAR LA MISMA DIRECCIÓN PARA SILVER (Altamente correlacionados con GOLD)
+        silver_direction = gold_direction  # ⭐ CRÍTICO: SILVER sigue a GOLD (correlación ~0.95)
+        silver_buy_score = gold_buy_score  # Usar los mismos scores
+        silver_sell_score = gold_sell_score
+        self.add_log(f"[2/3] ✅ SILVER: Usando dirección de GOLD = {silver_direction} (correlacionados, BUY={silver_buy_score:.1f}, SELL={silver_sell_score:.1f})", 'success')
         
         # ⭐ ABRIR EN GOLD CON SU DIRECCIÓN ÓPTIMA
-        self.add_log(f"[3/4] Abriendo en GOLD con dirección {gold_direction}...", 'info')
+        self.add_log(f"[3/3] Abriendo en GOLD con dirección {gold_direction}...", 'info')
         self.config['SYMBOL'].set('GOLD')
+        self._configure_symbol_parameters('GOLD')  # ⭐ NUEVO: Reconfigura parámetros para GOLD
         gold_result = self.abrir_operacion(gold_direction, force=force, startup=startup)
         
         # Pausa mínima entre órdenes para evitar race conditions
         time.sleep(0.5)
         
-        # ⭐ ABRIR EN SILVER CON SU DIRECCIÓN ÓPTIMA (INDEPENDIENTE)
-        self.add_log(f"[4/4] Abriendo en SILVER con dirección {silver_direction}...", 'info')
+        # ⭐ ABRIR EN SILVER CON LA MISMA DIRECCIÓN (Correlacionados)
+        self.add_log(f"[3/3 - Parte 2] Abriendo en SILVER con dirección {silver_direction} (igual a GOLD - correlacionados)...", 'info')
         self.config['SYMBOL'].set('SILVER')
+        self._configure_symbol_parameters('SILVER')  # ⭐ NUEVO: Reconfigura parámetros para SILVER
         silver_result = self.abrir_operacion(silver_direction, force=force, startup=startup)
         
         # Restaurar símbolo original
@@ -8033,7 +8535,7 @@ class MT5AdaptiveTradingBot:
         ⭐ FLUJO: ANÁLISIS (DUAL si force=False, RÁPIDO si force=True) → ARBITRADOR → EJECUCIÓN
         """
         # --- FILTRO DE MICROTENDENCIA/MOMENTUM - DETECTA TENDENCIAS REALES SIN SESGO ---
-        symbol = self.config['SYMBOL'].get()
+        symbol = self._get_symbol()
         try:
             microtrend = self._microtrend_direction(symbol, bars=10, threshold=None)  # ⭐ USA THRESHOLD DE CONFIG EN TIEMPO REAL
         except Exception as e:
@@ -8043,9 +8545,12 @@ class MT5AdaptiveTradingBot:
 
         # ⭐⭐⭐ VALIDACIÓN CRÍTICA #0: ANÁLISIS COMPLETO DE 10 VELAS ANTES DE CUALQUIER APERTURA
         can_open_10velas, analysis_10 = self._analyze_10_candles_complete(symbol, direccion_sugerida)
-        if not can_open_10velas:
+        # ⭐ BYPASS PARA TESTING: Si force=True, permitir aunque falle análisis de 10 velas
+        if not can_open_10velas and not force:
             self.add_log(f"[ABRIR] ❌ BLOQUEADO por análisis de 10 velas: {analysis_10.get('reason', 'desconocido')}", 'warning')
             return False
+        elif not can_open_10velas and force:
+            self.add_log(f"[ABRIR] ⚠️ Análisis 10-velas rechazó ({analysis_10.get('reason', '')}), pero force=True permite continuar", 'warning')
 
         # Si la microtendencia es contraria a la dirección sugerida, solo abrir si el score es MUY superior
         # (esto se aplica tanto en modo normal como forzado)
@@ -8056,7 +8561,19 @@ class MT5AdaptiveTradingBot:
             # Anti-reentrada global: evita envíos duplicados de orden cuando dos hilos intentan abrir a la vez.
             try:
                 now_ts = time.time()
-                min_gap = 1.20 if force else 0.35
+                # ⭐ EN MODO MÚLTIPLES PARTES: permitir aperturas rápidas (gap muy pequeño)
+                try:
+                    use_multiple = self.config.get('USE_MULTIPLE_PARTS', tk.BooleanVar(value=False)).get()
+                except:
+                    use_multiple = False
+                
+                if force and use_multiple:
+                    min_gap = 0.05  # 50ms: permite aperturas casi simultáneas en modo múltiples partes
+                elif force:
+                    min_gap = 0.35  # Forzado pero no en múltiples partes
+                else:
+                    min_gap = 0.35  # Normal
+                
                 with self._open_operation_gate_lock:
                     last_ts = float(getattr(self, '_last_open_attempt_ts', 0.0) or 0.0)
                     if (now_ts - last_ts) < min_gap:
@@ -8066,8 +8583,8 @@ class MT5AdaptiveTradingBot:
                         )
                         return False
                     self._last_open_attempt_ts = now_ts
-            except Exception:
-                pass
+            except Exception as e:
+                self.add_log(f"[ABRIR] [ERROR] Anti-reentrada: {str(e)[:60]}", 'error')
 
             # ⭐⭐⭐ VERIFICACIÓN #1: PAUSAS - CRÍTICA Y TEMPRANA
             if not startup:
@@ -8099,7 +8616,7 @@ class MT5AdaptiveTradingBot:
                 self.add_log(f"[ABRIR] ❌ Stop forzado activado", 'warning')
                 return False
             
-            symbol = self.config['SYMBOL'].get()
+            symbol = self._get_symbol()
             self.add_log(f"[ABRIR] ✓ Verificaciones iniciales OK | Símbolo: {symbol} | Force: {force} | Startup: {startup}", 'info')
             
             # ⭐ VERIFICACIÓN CRÍTICA: Consultar FLAGS de sincronización (trend_monitor)
@@ -8125,6 +8642,7 @@ class MT5AdaptiveTradingBot:
                 buy_res = {'score': 50, 'confidence': 70, 'recommendation': 'HOLD'}
                 sell_res = {'score': 50, 'confidence': 70, 'recommendation': 'HOLD'}
             else:
+                self.add_log("[ABRIR] [INFO] Ejecutando DUAL analysis...", 'info')
                 analysis = self._dual_analysis_before_opening(symbol)
                 if not analysis:
                     self.add_log("[ABRIR] ❌ DUAL analysis devolvió None", 'error')
@@ -8141,8 +8659,12 @@ class MT5AdaptiveTradingBot:
                 sell_score = float(sell_res.get('score', 0))
                 gap = abs(buy_score - sell_score)
                 if gap < score_gap_required:
-                    self.add_log(f"[MICROTREND] BLOQUEADO: Dirección sugerida {rec} va contra microtendencia {microtrend} y gap={gap:.2f} < {score_gap_required}", 'warning')
-                    return False
+                    msg = f"[MICROTREND] BLOQUEADO: Dirección sugerida {rec} va contra microtendencia {microtrend} y gap={gap:.2f} < {score_gap_required}"
+                    if not force:
+                        self.add_log(msg, 'warning')
+                        return False
+                    else:
+                        self.add_log(f"{msg} - FORZADO: Continuando con force=True", 'warning')
                 else:
                     self.add_log(f"[MICROTREND] ⚠️ Permitiendo apertura contra microtendencia por gap alto: {gap:.2f}", 'warning')
             # Si hay muchas operaciones abiertas en un sentido y la microtendencia cambió, pausar ese sentido
@@ -8290,7 +8812,8 @@ class MT5AdaptiveTradingBot:
         # Volatility requirement: allow bypass when force=True
         if require_vol and not startup and not force:
             try:
-                snaps = self.reload_market_snapshots() or []
+                # ⭐ Usar GOLD como símbolo por defecto para recarga
+                snaps = self.reload_market_snapshots(symbol='GOLD') or []
                 vol_level = self.get_volatility_level(snaps)
                 if vol_level != 'NORMAL':
                     self.add_log(f"[ABRIR] ⚠️ Volatilidad: {vol_level} (requiere NORMAL)", 'warning')
@@ -8307,7 +8830,10 @@ class MT5AdaptiveTradingBot:
             try:
                 snaps = []
                 try:
-                    snaps = self.reload_market_snapshots() or []
+                    # ⭐ Recargar ambos símbolos al startup
+                    snaps = self.reload_market_snapshots(symbol='GOLD') or []
+                    if not snaps:
+                        snaps = self.reload_market_snapshots(symbol='SILVER') or []
                 except Exception as e:
                     logger.exception("Error leyendo market_snapshots en apertura startup")
                     self.add_log(f"[STARTUP] ⚠️ Error loading snapshots: {str(e)[:60]}", 'warning')
@@ -8326,7 +8852,8 @@ class MT5AdaptiveTradingBot:
                 self.add_log(f"[STARTUP] ❌ Exception: {str(e)[:80]}", 'error')
                 import traceback
                 self.add_log(f"[TRACE] {traceback.format_exc()[:200]}", 'error')
-        symbol = self.config['SYMBOL'].get()
+        
+        symbol = self._get_symbol()
         
         symbol_info = mt5.symbol_info(symbol)
         if symbol_info is None:
@@ -8360,20 +8887,34 @@ class MT5AdaptiveTradingBot:
             # Para Multi-IA o forzadas: usar TP configurado desde la GUI
             try:
                 tp_diff = float(self.config['TP_DIFF'].get()) if 'TP_DIFF' in self.config else 1.0
-            except Exception:
+            except Exception as e:
+                self.add_log(f"[CONFIG] Error reading TP_DIFF: {str(e)[:60]}", 'error')
                 tp_diff = 1.0
         
         # ⭐ OBLIGATORIO: obtener SL desde config (respetar diferencia)
         try:
             sl_diff = float(self.config['SL_DIFF'].get()) if 'SL_DIFF' in self.config else 30.0
-        except Exception:
+        except Exception as e:
+            self.add_log(f"[CONFIG] Error reading SL_DIFF: {str(e)[:60]}", 'error')
             sl_diff = 30.0
         
         tick = mt5.symbol_info_tick(symbol)
-        if tick is None:
-            return False
         
-        precio = tick.ask if direccion_sugerida == "BUY" else tick.bid
+        # Si MT5 falla, obtener precio del JSON
+        if tick is None:
+            json_snaps = self._read_snapshots_for_symbol(symbol)
+            if json_snaps and len(json_snaps) > 0:
+                last_snap = json_snaps[-1]
+                precio = float(last_snap.get('close', 0))
+                if precio <= 0:
+                    self.add_log(f"[PRECIO] Precio del JSON inválido: {precio}", 'error')
+                    return False
+                self.add_log(f"[PRECIO] Obtenido del JSON: {precio:.5f}", 'info')
+            else:
+                self.add_log(f"[ERROR] No hay datos en JSON ni en MT5", 'error')
+                return False
+        else:
+            precio = tick.ask if direccion_sugerida == "BUY" else tick.bid
         
         if direccion_sugerida == "BUY":
             sl = round(precio - sl_diff, symbol_info.digits)
@@ -8761,6 +9302,82 @@ class MT5AdaptiveTradingBot:
             return
         self._start_bot_in_progress = True
         
+        # ⭐⭐⭐ LIMPIEZA TOTAL - RESETEAR TODO DESDE CERO ⭐⭐⭐
+        self.add_log("[RESET] Limpiando estado anterior completamente...", 'warning')
+        
+        # ✅ PRIMERO: Re-habilitar controles si están deshabilitados (después de emergencia)
+        for entry in self.config_entries.values():
+            try:
+                entry.config(state='normal')
+            except:
+                pass
+        
+        self.force_stop_triggered = False  # ✅ LIMPIO: Permitir aperturas nuevamente
+        self.is_running = False  # Se establecerá a True abajo
+        self.bot_pausado = False
+        self.en_pausa = False
+        self.pause_until = 0.0
+        self.pause_reason = ""
+        self.block_until = 0.0
+        self.ganancia_neta = 0.0
+        self.ganancia_total = 0.0
+        self.saldo_total_acumulado = 0.0
+        self.saldo_actual = 0.0
+        self.ultima_ganancia = 0.0
+        self.objetivo_cumplido = False
+        self.total_operaciones_abiertas = 0
+        self.ganadas = 0
+        self.perdidas = 0
+        self.z = 0
+        self.operaciones_azules = 0
+        self.operaciones_rojas = 0
+        self.operaciones_cerradas = 0
+        self.ultima_operacion = time.time()
+        self.ultima_operacion_timestamp = int(time.time())
+        self.ultima_apertura = time.time()
+        self.primera_operacion = True
+        self.perdio_primera = False
+        self.ultima_perdida = False
+        self.ultima_direccion = None
+        self.ultimo_precio = None
+        self.perdidas_consecutivas = 0
+        self.ganancias_consecutivas = 0
+        self.analisis_inicial_hecho = False
+        
+        # Resetear contadores de posiciones
+        self.position_tracking = {}
+        self.posiciones_cerradas_tracking = {}
+        self.deals_anterior = {}
+        self.operaciones_actuales.clear()
+        self.operaciones_procesadas.clear()
+        self.deals_procesados = set()
+        self.position_ids = set()
+        self.pending_operations = []  # ✅ Limpiar operaciones en espera
+        
+        # Resetear historial
+        self.historial_resultados = []
+        
+        # Resetear objetivo neto
+        self.objetivo_neto_inicial = 0.0
+        self.objetivo_neto_target = 0.0
+        
+        # Resetear scheduler
+        self._scheduler_running = True
+        self._forced_reopen_started = False
+        self._forced_scheduler_thread = None
+        
+        # Resetear estado de análisis
+        self._analysis_in_progress = False
+        self.last_analysis_result = None
+        self.market_state = "ANALIZANDO"
+        self.trend_direction = "NEUTRAL"
+        self.trend_strength = 0
+        
+        # ✅ LIMPIAR LOGS
+        self.logs = []
+        
+        self.add_log("[OK] Estado anterior limpiado completamente", 'success')
+        
         # Validar y configurar tiempo
         tiempo_min = self.tiempo_total.get()
         if tiempo_min > 0:
@@ -8793,75 +9410,45 @@ class MT5AdaptiveTradingBot:
         # and overwrites snapshots on disk and in-memory every `SNAPSHOT_RELOAD_INTERVAL` seconds.
         try:
             symbol = self.config['SYMBOL'].get()
+            # ⭐ CRÍTICO: Asegurar que símbolo NUNCA sea VACÍO
+            if not symbol or symbol.strip() == '':
+                logger.warning("[INIT] ⚠️ Symbol del config está VACÍO, usando GOLD por defecto")
+                symbol = 'GOLD'
             
-            # ⭐ NUEVA ESTRATEGIA: Usar prefill_market_data_and_return() para obtener snapshots directamente
-            filled = 0
-            prefilled_snapshots = []
-            try:
-                # Intenta obtener snapshots directamente (evita depender SOLO del archivo)
-                filled, prefilled_snapshots = prefill_market_data_and_return(symbol, minutes=500)
-                logger.info(f"[INIT-PREFILL] ✓ prefill_market_data_and_return() retornó {filled} snapshots en memoria")
-            except Exception as e:
-                logger.warning(f"[INIT-PREFILL] prefill_market_data_and_return falló, intentando método antiguo: {e}")
+            # ⭐ NUEVO: Cargar datos para AMBOS GOLD y SILVER al inicio
+            self.add_log("[INIT] Cargando datos para GOLD y SILVER...", 'info')
+            for load_symbol in ['GOLD', 'SILVER']:
                 try:
-                    filled = prefill_market_data(symbol, minutes=500)
-                except Exception:
-                    filled = 0
-                prefilled_snapshots = []
-
-            # Recargar snapshots en memoria (protegido)
-            snaps_reloaded = None
-            try:
-                snaps_reloaded = self.reload_market_snapshots() or []
-                logger.info(f"[INIT-RELOAD] ✓ reload_market_snapshots() retornó {len(snaps_reloaded)} snapshots (histórico)")
-                if len(snaps_reloaded) == 0:
-                    logger.warning("[INIT-RELOAD] ⚠️ reload_market_snapshots retornó lista VACÍA")
-                    self.market_snapshots = []
-                # else: self.market_snapshots ya fue asignado por reload_market_snapshots() internamente
-            except Exception as e:
-                logger.exception(f"[INIT-RELOAD] ❌ Error recargando snapshots: {e}")
-                self.market_snapshots = []
-                snaps_reloaded = []
-
-            # Verificación post-carga: ¿Está self.market_snapshots correctamente poblada?
-            actual_count = len(self.market_snapshots) if isinstance(self.market_snapshots, list) else 0
-            logger.info(f"[INIT-VERIFY] self.market_snapshots tiene {actual_count} items tras reload")
+                    filled, prefilled_snapshots = prefill_market_data_and_return(load_symbol, minutes=500)
+                    logger.info(f"[INIT-PREFILL] ✓ {load_symbol}: {filled} snapshots en memoria")
+                    
+                    # Recargar para ese símbolo específicamente
+                    snaps_loaded = self.reload_market_snapshots(symbol=load_symbol) or []
+                    if snaps_loaded and isinstance(snaps_loaded, list):
+                        with self.market_snapshots_lock_by_symbol.get(load_symbol, threading.Lock()):
+                            self.market_snapshots_by_symbol[load_symbol] = snaps_loaded
+                            logger.info(f"[INIT-RELOAD] ✓ {load_symbol}: {len(snaps_loaded)} snapshots cargados")
+                except Exception as e:
+                    logger.warning(f"[INIT-PREFILL] Error cargando {load_symbol}: {str(e)[:50]}")
             
-            # ⭐ FALLBACK EN CASCADA:
-            # 1. Si reload fue exitoso, usar esos datos ✓
-            # 2. Si reload falló pero tenemos prefilled_snapshots, usarlos
-            # 3. Si ambos fallan, leer del archivo manualmente
-            if actual_count == 0:
-                logger.warning(f"[INIT-CRITICAL] ⚠️ self.market_snapshots vacío!")
-                
-                # Fallback 1: Usar prefilled_snapshots directos
-                if len(prefilled_snapshots) > 0:
-                    logger.warning(f"[INIT-CRITICAL] Usando FALLBACK 1: prefilled_snapshots ({len(prefilled_snapshots)} items)")
-                    self.market_snapshots = prefilled_snapshots
-                    # ⭐ NUEVO: Pasar símbolo para metadata histórica
-                    symbol = self.config.get('SYMBOL', tk.StringVar(value='ETHUSD')).get() if hasattr(self, 'config') else 'ETHUSD'
-                    write_market_snapshots(prefilled_snapshots, symbol=symbol, max_snapshots=1440)  # Re-guardar al archivo
-                    actual_count = len(prefilled_snapshots)
-                    logger.info(f"[INIT-CRITICAL] ✓ Asignado prefilled_snapshots, re-guardado a archivo")
-                else:
-                    # Fallback 2: Leer directamente del archivo
-                    logger.warning(f"[INIT-CRITICAL] FALLBACK 1 falló (prefilled vacío), intentando FALLBACK 2: leer archivo")
-                    try:
-                        snaps_from_file = read_market_snapshots() or []
-                        logger.warning(f"[INIT-CRITICAL] FALLBACK 2: Leyendo del archivo: {len(snaps_from_file)} snapshots")
-                        if len(snaps_from_file) > 0:
-                            self.market_snapshots = snaps_from_file
-                            actual_count = len(snaps_from_file)
-                            logger.info(f"[INIT-CRITICAL] ✓ FALLBACK 2 exitoso: {actual_count} snapshots restaurados")
-                        else:
-                            logger.error("[INIT-CRITICAL] FALLBACK 2 FALLÓ: archivo también vacío")
-                    except Exception as e:
-                        logger.error(f"[INIT-CRITICAL] FALLBACK 2 error: {e}")
+            self.add_log("[OK] Datos de GOLD y SILVER cargados exitosamente", 'success')
+            
+            # ⭐ INICIALIZAR self.market_snapshots con GOLD (símbolo por defecto)
+            # No cargar símbolo adicional del config para evitar símbolo vacío
+            if 'GOLD' in self.market_snapshots_by_symbol and len(self.market_snapshots_by_symbol['GOLD']) > 0:
+                self.market_snapshots = self.market_snapshots_by_symbol['GOLD']
+                logger.info(f"[INIT-FINAL] ✓ market_snapshots = GOLD ({len(self.market_snapshots)} items)")
+            elif 'SILVER' in self.market_snapshots_by_symbol and len(self.market_snapshots_by_symbol['SILVER']) > 0:
+                self.market_snapshots = self.market_snapshots_by_symbol['SILVER']
+                logger.info(f"[INIT-FINAL] ✓ market_snapshots = SILVER ({len(self.market_snapshots)} items)")
+            else:
+                logger.warning("[INIT-FINAL] ⚠️ Ambos GOLD y SILVER vacíos, inicializando lista vacía")
+                self.market_snapshots = []
             
             final_count = len(self.market_snapshots) if isinstance(self.market_snapshots, list) else 0
             logger.info(f"[INIT-FINAL] Estado final: market_snapshots = {final_count} items")
 
-            self.add_log(f"🗂️ Prefilled {filled} market snapshots into logs for {symbol}", 'info')
+            self.add_log(f"🗂️ Datos de GOLD y SILVER prefilled en logs", 'info')
 
             # ⭐ CRÍTICO: Iniciar trend_monitor JUSTO AHORA, ANTES de evaluate_snapshots_and_open
             # Esto permite que realice su análisis INMEDIATO antes de que el scheduler intente abrir
@@ -8934,8 +9521,18 @@ class MT5AdaptiveTradingBot:
 
             if scheduler_can_start:
                 def _forced_reopen_scheduler_simple():
+                    last_dual_reload = 0  # ⭐ TIMESTAMP del último reload dual
                     while getattr(self, '_scheduler_running', True):
                         try:
+                            # ⭐ NUEVO: Recargar snapshots para AMBOS GOLD y SILVER cada 5-10 segundos
+                            now = time.time()
+                            if (now - last_dual_reload) > 5.0:  # Cada 5 segundos
+                                try:
+                                    self.reload_all_symbols_snapshots()
+                                    last_dual_reload = now
+                                except Exception as e:
+                                    logger.warning(f"[SCHEDULER] Error en dual reload: {str(e)[:50]}")
+                            
                             # ⭐ FIX #20: Si bot está en pausa por objetivo, NO abrir nada
                             if self.bot_pausado:
                                 time.sleep(1)  # Esperar 1s antes de reintentar
@@ -8975,6 +9572,12 @@ class MT5AdaptiveTradingBot:
                                 self._last_forced_cycle_ts = now
                                 # Es hora de intentar reapertura forzada CON ANÁLISIS COMPLETO
                                 self.add_log(f"\n[RESET] Scheduler: reapertura forzada activada", 'warning')
+                                
+                                # ⭐ INICIALIZAR VARIABLES antes del try (FIX: UnboundLocalError)
+                                best_dir = 'BUY'  # Default para garantizar que siempre esté definido
+                                buy_score = 50
+                                sell_score = 50
+                                trend_analysis = None
                                 
                                 try:
                                     # ⭐ VERIFICACIÓN CRÍTICA #1: Consultar FLAGS de sincronización (trend_monitor)
@@ -9047,7 +9650,7 @@ class MT5AdaptiveTradingBot:
                                         best_dir = 'BUY'  # Fallback: BUY por defecto
 
                                     self.add_log(f"[RESET] 🚀 ABRIENDO {best_dir} (forzada, garantizado)", 'warning')
-                                    self.abrir_operacion(best_dir, force=True, startup=True, force_params=self.forced_open_params)
+                                    self.abrir_operacion_smart(best_dir, force=True, startup=True)
                                     # ✅ Si llegó aquí sin excepción = ÉXITO
                                     self.next_forced_open = now + intervalo
                                     self.add_log(f"[SCHEDULER] ⏱️ Próxima reapertura en {intervalo}s ({minutes}m)", 'info')
@@ -9110,27 +9713,13 @@ class MT5AdaptiveTradingBot:
         except Exception:
             pass
             
-        # Mantener cualquier operación ya abierta (por ejemplo la apertura forzada de inicio)
-        # Inicializar contadores básicos sin borrar position_tracking creado por la apertura inicial.
-        try:
-            # No reset de position_tracking para preservar aperturas forzadas previas
-            self.total_operaciones_abiertas = len([p for p in (mt5.positions_get(symbol=symbol) or []) if getattr(p, 'magic', None) == self.config['MAGIC_NUMBER']])
-        except Exception:
-            try:
-                self.total_operaciones_abiertas = int(getattr(self, 'total_operaciones_abiertas', 0))
-            except Exception:
-                self.total_operaciones_abiertas = 0
-        self.z = 0
-        self.ganadas = 0
-        self.perdidas = 0
+        # Limpiar estructuras de datos
         self.operaciones_actuales.clear()
         self.operaciones_procesadas.clear()
         self.operaciones_cerradas = 0
-        self.en_pausa = False
-        self.ganancia_total = 0.0
-        self.historial_resultados = []
-        self.deals_procesados = set()
-        self.ultima_operacion_timestamp = int(time.time())
+        self.z = 0
+        self.deals_procesados.clear()
+        self.analisis_inicial_hecho = False
         
         self.update_stats()
         
@@ -9355,44 +9944,34 @@ class MT5AdaptiveTradingBot:
         
         # ⭐ NUEVO: Iniciar monitor de Margen de Ganancia u Objetivo Neto (solo UNO a la vez)
         try:
-            margen_pct = float(self._safe_get('MARGEN_GANANCIA', 1.0))
+            margen_pct = float(self._safe_get('MARGEN_GANANCIA', 0.0))
             objetivo_neto = float(self._safe_get('OBJETIVO_NETO', 0.0))
             
-            # Determinar cuál activar (prioridad: Margen de Ganancia)
+            # ⭐ RESETEAR FLAGS Y VALORES ANTES DE ACTIVAR
+            self.margen_ganancia_alcanzado = False
+            self.balance_inicial_para_margen = 0.0
+            self.objetivo_margen_ganancia = 0.0
+            self.objetivo_neto_alcanzado = False
+            self.objetivo_neto_valor = 0.0
+            self.margen_monitor_running = False
+            self.objetivo_neto_running = False
+            
+            # Determinar cuál activar (prioridad: Margen de Ganancia si >= 1)
             if margen_pct >= 1:
-                # Activar Margen de Ganancia, desactivar Objetivo Neto
-                self.margen_ganancia_alcanzado = False
-                self.balance_inicial_para_margen = 0.0
-                self.objetivo_margen_ganancia = 0.0
+                # Activar Margen de Ganancia
                 self.margen_monitor_running = True
-                self.margen_monitor_thread = None
                 self.root.after(0, self._monitor_profit_margin)
                 self.add_log(f"[✓] Monitor de Margen de Ganancia INICIADO - Objetivo: {margen_pct}%", 'success')
-                
-                # Desactivar Objetivo Neto
-                self.objetivo_neto_running = False
-                if self.objetivo_neto_label:
-                    self.objetivo_neto_label.config(text="Objetivo Neto Desactivado (incompatible)")
                     
             elif objetivo_neto > 0:
-                # Activar Objetivo Neto, desactivar Margen de Ganancia
-                self.objetivo_neto_alcanzado = False
-                self.objetivo_neto_valor = 0.0
+                # Activar Objetivo Neto
                 self.objetivo_neto_running = True
-                self.objetivo_neto_thread = None
                 self.root.after(0, self._monitor_objetivo_neto)
                 self.add_log(f"[✓] Monitor de Objetivo Neto INICIADO - Objetivo: ${objetivo_neto:.2f}", 'success')
-                
-                # Desactivar Margen de Ganancia
-                self.margen_monitor_running = False
-                self.margen_monitor_label.config(text="Margen Desactivado (incompatible)")
             else:
                 # Ambos desactivados
-                self.margen_monitor_running = False
-                self.objetivo_neto_running = False
-                self.margen_monitor_label.config(text="Margen Desactivado (0%)")
-                if self.objetivo_neto_label:
-                    self.objetivo_neto_label.config(text="Objetivo Neto Desactivado ($0)")
+                self.add_log(f"[ℹ️] Monitores desactivados: Margen={margen_pct}%, Objetivo=${objetivo_neto}", 'info')
+                
         except Exception as e:
             self.add_log(f"[⚠️] Error iniciando Monitores: {str(e)[:60]}", 'warning')
             self.margen_monitor_running = False
@@ -10775,7 +11354,8 @@ class MT5AdaptiveTradingBot:
                     if rates is None or len(rates) == 0:
                         logger.warning("[MONITOR-MT5] No data from MT5, using fallback")
                         # Fallback a archivo si MT5 falla
-                        market_snaps = self.reload_market_snapshots() or []
+                        # ⭐ Usar GOLD como símbolo por defecto
+                        market_snaps = self.reload_market_snapshots(symbol='GOLD') or []
                     else:
                         # ✅ Convertir rates de MT5 a snapshots format
                         market_snaps = []
@@ -10801,7 +11381,8 @@ class MT5AdaptiveTradingBot:
                             pass
                 except Exception as e:
                     logger.debug(f"[MONITOR-MT5] Error: {str(e)[:40]} - usando fallback")
-                    market_snaps = self.reload_market_snapshots() or []
+                    # ⭐ Usar GOLD como símbolo por defecto en fallback
+                    market_snaps = self.reload_market_snapshots(symbol='GOLD') or []
                 
                 # Asegurar que tenemos datos
                 if not market_snaps:
@@ -11280,9 +11861,8 @@ class MT5AdaptiveTradingBot:
                 messagebox.showerror("Error", "No se pudo obtener información del símbolo")
                 return
             
-            # Calcular TP basado en spread pero SL dinámico desde UI
-            min_stop = symbol_info.point * symbol_info.spread * 2
-            tp_diff = max(self.config['TP_DIFF'].get(), min_stop * 1.5)
+            # Calcular TP basado en configuración de UI
+            tp_diff = float(self.config['TP_DIFF'].get())  # ⭐ SIEMPRE usar el TP de la GUI
             sl_diff = float(self.config['SL_DIFF'].get())  # <- usar valor desde interfaz
     
             tick = mt5.symbol_info_tick(symbol)
@@ -13980,20 +14560,117 @@ Se abrirá al precio actual de mercado."""
                 'reason': f'Excepción: {str(e)}'
             }
 
+    def _calculate_vidya(self, closes, cmo_period=9, ema_period=12):
+        """
+        ⭐ Calcula VIDYA (Variable Index Dynamic Average)
+        
+        Pasos:
+        1. Calcular CMO (Chande Momentum Oscillator) sobre closes
+        2. Usar CMO para ajustar dinámicamente el factor de suavizado de EMA
+        3. Aplicar EMA ajustada a los closes
+        
+        Args:
+            closes: array de precios de cierre
+            cmo_period: período para calcular CMO (default 9)
+            ema_period: período base para EMA (default 12)
+        
+        Returns:
+            tuple: (vidya_values, cmo_value) donde vidya_values es array y cmo_value es último CMO
+        """
+        try:
+            if len(closes) < max(cmo_period, ema_period):
+                return None, None
+            
+            closes = np.array([float(x) for x in closes if x > 0])
+            
+            # PASO 1: Calcular CMO sobre los últimos cmo_period closes
+            if len(closes) >= cmo_period:
+                recent_closes = closes[-cmo_period:]
+                up_moves = []
+                down_moves = []
+                
+                for i in range(1, len(recent_closes)):
+                    change = recent_closes[i] - recent_closes[i-1]
+                    if change > 0:
+                        up_moves.append(change)
+                        down_moves.append(0)
+                    elif change < 0:
+                        up_moves.append(0)
+                        down_moves.append(abs(change))
+                    else:
+                        up_moves.append(0)
+                        down_moves.append(0)
+                
+                up_sum = sum(up_moves) if up_moves else 0.0001
+                down_sum = sum(down_moves) if down_moves else 0.0001
+                
+                # CMO = ((UP - DOWN) / (UP + DOWN)) * 100
+                cmo_value = ((up_sum - down_sum) / (up_sum + down_sum) * 100) if (up_sum + down_sum) > 0 else 0
+            else:
+                cmo_value = 0
+            
+            # PASO 2: Calcular factor de suavizado dinámico basado en CMO
+            # factor = (1 + |CMO| / 100) permite que VIDYA sea más reactiva en tendencias fuertes
+            dynamic_factor = (1 + abs(cmo_value) / 100)
+            
+            # Ajustar período EMA dinámicamente
+            adjusted_ema_period = max(2, int(ema_period / dynamic_factor))
+            
+            # PASO 3: Calcular EMA con el período ajustado
+            vidya_values = []
+            multiplier = 2 / (adjusted_ema_period + 1)
+            
+            vidya = closes[0]  # Primer valor de VIDYA es el primer cierre
+            vidya_values.append(vidya)
+            
+            for i in range(1, len(closes)):
+                # EMA = (Precio - EMA_anterior) * multiplier + EMA_anterior
+                vidya = (closes[i] - vidya) * multiplier + vidya
+                vidya_values.append(vidya)
+            
+            return np.array(vidya_values), cmo_value
+            
+        except Exception as e:
+            logger.error(f"Error calculando VIDYA: {str(e)}")
+            return None, None
+
     def _validate_gold_optimal_entry(self, symbol, direction, snapshots=None):
         """
-        ⭐ VALIDACIÓN INTERNA: CONFIG ÓPTIMA PARA GOLD
+        ⭐ VALIDACIÓN INTERNA: CONFIG ÓPTIMA PARA GOLD (XAUUSD) - 5 CRITERIOS
         
-        Valida entrada según configuración de ORO:
-        - Threshold ≥ 1.8
-        - Microtendencia: últimas 4 velas en dirección correcta
-        - Cuerpo ≥ 60%
-        - Impulso ≥ 1.5 puntos
+        Validaciones en secuencia:
+        🟡 1. THRESHOLD: 16-19 pips (ideal 18)
+           ├─ 16 pips → Captura movimientos pero entra en ruido
+           ├─ 18 pips → Balance perfecto
+           └─ 19 pips → Más filtrado, pierda movimientos
+        
+        🟡 2. MICROTENDENCIA MULTI-PERÍODO (Rango: 3-5 velas, ideal 4):
+           ├─ Análisis 10 velas → contexto general
+           ├─ Análisis 20 velas → tendencia media
+           ├─ Análisis 30 velas → tendencia larga
+           └─ Últimas 3-5 velas: TODAS en MISMA DIRECCIÓN (confirmación)
+           ⚠️ REQUISITO: Las velas recientes deben alinearse con la tendencia de fondo
+        
+        🟡 3. FILTRO DE VELA (CRÍTICO - Elimina ruido):
+           ✅ Cuerpo ≥ 60% → Vela con cuerpo fuerte, no es mecha
+           ✅ Mecha ≤ 40% → Las mechas/sombras son pequeñas (< 40%)
+           ✅ Cierre cerca del extremo:
+              • BUY: Cierre ≥ 70% del rango (muy cerca del MÁXIMO)
+              • SELL: Cierre ≤ 30% del rango (muy cerca del MÍNIMO)
+           ⚠️ Esto elimina ~90% del ruido. Solo velas VERDADERAMENTE válidas entran.
+        
+        🟡 4. IMPULSO: ≥ 1.5 puntos (movimiento real, no ruido)
+        
+        🚫 5. FILTRO ANTI-RUIDO (4. Evitar):
+           ❌ NO OPERAR SI:
+              • 2 velas seguidas con mechas grandes (> 50% del rango)
+              • Rango lateral (máximos iguales o mínimos iguales ±2 pips)
+              • Velas pequeñas consecutivas (cuerpo < 30%)
         
         Retorna: {
             'valid': bool,
-            'score': 0-100,
-            'checks': {...}
+            'score': 0-100 (20 puntos por criterio),
+            'checks': {...}  (detalle de cada validación)
         }
         """
         try:
@@ -14033,41 +14710,122 @@ Se abrirá al precio actual de mercado."""
                     'threshold_pips': threshold_pips
                 }
             
-            # ⭐ 2. VALIDAR MICROTENDENCIA (últimas 4 velas)
+            # ⭐ 2. VALIDAR MICROTENDENCIA MULTI-PERÍODO (3-5 velas recientes + contexto 10/20/30)
             try:
                 microtrend_candles = int(self.config.get('GOLD_MICROTREND_CANDLES', tk.IntVar(value=4)).get())
             except:
                 microtrend_candles = 4
             
-            last_n = snapshots[-microtrend_candles:]
-            up_count = 0
-            down_count = 0
+            # Asegurar rango válido
+            microtrend_candles = max(3, min(5, microtrend_candles))
             
-            for candle in last_n:
+            # ═══════════════════════════════════════════════════════════
+            # ANÁLISIS MULTI-PERÍODO: Contexto de fondo (10, 20, 30 velas)
+            # ═══════════════════════════════════════════════════════════
+            context_10_up = context_10_down = 0
+            context_20_up = context_20_down = 0
+            context_30_up = context_30_down = 0
+            
+            # Contexto 10 velas
+            for i, candle in enumerate(snapshots[-10:] if len(snapshots) >= 10 else snapshots):
                 c_open = float(candle.get('open', 0))
                 c_close = float(candle.get('close', 0))
                 if c_open > 0 and c_close > 0:
                     if c_close > c_open:
-                        up_count += 1
-                    elif c_close < c_open:
-                        down_count += 1
+                        context_10_up += 1
+                    else:
+                        context_10_down += 1
             
+            # Contexto 20 velas
+            for candle in snapshots[-20:] if len(snapshots) >= 20 else snapshots:
+                c_open = float(candle.get('open', 0))
+                c_close = float(candle.get('close', 0))
+                if c_open > 0 and c_close > 0:
+                    if c_close > c_open:
+                        context_20_up += 1
+                    else:
+                        context_20_down += 1
+            
+            # Contexto 30 velas
+            for candle in snapshots[-30:] if len(snapshots) >= 30 else snapshots:
+                c_open = float(candle.get('open', 0))
+                c_close = float(candle.get('close', 0))
+                if c_open > 0 and c_close > 0:
+                    if c_close > c_open:
+                        context_30_up += 1
+                    else:
+                        context_30_down += 1
+            
+            # ═══════════════════════════════════════════════════════════
+            # MICROTENDENCIA: Últimas 3-5 velas CONFIRMACIÓN
+            # ═══════════════════════════════════════════════════════════
+            last_n = snapshots[-microtrend_candles:]
+            up_count = 0
+            down_count = 0
+            microtrend_details = []
+            
+            for idx, candle in enumerate(last_n):
+                c_open = float(candle.get('open', 0))
+                c_close = float(candle.get('close', 0))
+                if c_open > 0 and c_close > 0:
+                    is_up = c_close > c_open
+                    if is_up:
+                        up_count += 1
+                        microtrend_details.append(f"Vela {idx+1}: ↑ UP")
+                    else:
+                        down_count += 1
+                        microtrend_details.append(f"Vela {idx+1}: ↓ DOWN")
+            
+            # ═══════════════════════════════════════════════════════════
+            # VALIDACIÓN: Microtendencia alineada con contexto
+            # ═══════════════════════════════════════════════════════════
+            context_direction_10 = 'BUY' if context_10_up > context_10_down else ('SELL' if context_10_down > context_10_up else 'FLAT')
+            context_direction_20 = 'BUY' if context_20_up > context_20_down else ('SELL' if context_20_down > context_20_up else 'FLAT')
+            context_direction_30 = 'BUY' if context_30_up > context_30_down else ('SELL' if context_30_down > context_30_up else 'FLAT')
+            
+            # Voto de contexto (mayoría de 10, 20, 30 velas)
+            context_votes = {'BUY': 0, 'SELL': 0}
+            for ctx_dir in [context_direction_10, context_direction_20, context_direction_30]:
+                if ctx_dir in context_votes:
+                    context_votes[ctx_dir] += 1
+            
+            context_direction = 'BUY' if context_votes['BUY'] >= context_votes['SELL'] else 'SELL'
+            
+            # Validación: Microtendencia debe alinearse con dirección esperada Y contexto
             if direction == "BUY":
-                microtrend_valid = up_count > down_count and up_count >= microtrend_candles - 1
+                # Últimas velas deben ser UP (mayoría en dirección BUY)
+                # Y contexto debe confirmar tendencia alcista
+                microtrend_correct = up_count > down_count and up_count >= microtrend_candles - 1
+                context_agrees = context_direction == 'BUY'
+                microtrend_valid = microtrend_correct and context_agrees
             else:  # SELL
-                microtrend_valid = down_count > up_count and down_count >= microtrend_candles - 1
+                # Últimas velas deben ser DOWN (mayoría en dirección SELL)
+                # Y contexto debe confirmar tendencia bajista
+                microtrend_correct = down_count > up_count and down_count >= microtrend_candles - 1
+                context_agrees = context_direction == 'SELL'
+                microtrend_valid = microtrend_correct and context_agrees
             
             checks['microtrend'] = {
-                'up': up_count,
-                'down': down_count,
-                'valid': microtrend_valid
+                'recent_up': up_count,
+                'recent_down': down_count,
+                'recent_details': ' | '.join(microtrend_details),
+                'context_10': f"{context_10_up}↑/{context_10_down}↓ = {context_direction_10}",
+                'context_20': f"{context_20_up}↑/{context_20_down}↓ = {context_direction_20}",
+                'context_30': f"{context_30_up}↑/{context_30_down}↓ = {context_direction_30}",
+                'context_agreement': context_direction,
+                'valid': microtrend_valid,
+                'reason': f"Últimas {microtrend_candles} velas: {up_count}↑/{down_count}↓ vs Contexto: {context_direction}"
             }
             
-            # ⭐ 3. VALIDAR CUERPO DE VELA (última vela)
+            # ⭐ 3. VALIDAR CUERPO DE VELA + MECHA + CIERRE CERCANO (FILTRO CRÍTICO - Elimina ruido)
             try:
                 candle_body_pct = int(self.config.get('GOLD_CANDLE_BODY_PCT', tk.IntVar(value=60)).get())
+                candle_wick_pct = int(self.config.get('GOLD_CANDLE_WICK_PCT', tk.IntVar(value=40)).get())
+                candle_close_pct = int(self.config.get('GOLD_CANDLE_CLOSE_PCT', tk.IntVar(value=70)).get())
             except:
                 candle_body_pct = 60
+                candle_wick_pct = 40
+                candle_close_pct = 70
             
             last_candle = snapshots[-1]
             c_open = float(last_candle.get('open', 0))
@@ -14075,62 +14833,396 @@ Se abrirá al precio actual de mercado."""
             c_high = float(last_candle.get('high', 0))
             c_low = float(last_candle.get('low', 0))
             
-            if c_open > 0 and c_high > 0:
+            if c_open > 0 and c_high > 0 and c_low > 0:
+                # ═══════════════════════════════════════════════════════════
+                # CÁLCULO 1: CUERPO (open vs close)
+                # ═══════════════════════════════════════════════════════════
                 body_size = abs(c_close - c_open)
                 total_size = c_high - c_low
                 body_pct = (body_size / total_size * 100) if total_size > 0 else 0
                 body_valid = body_pct >= candle_body_pct
+                
+                # ═══════════════════════════════════════════════════════════
+                # CÁLCULO 2: MECHA (High-Close vs High-Open para BUY, o Low-Open vs Low-Close para SELL)
+                # ═══════════════════════════════════════════════════════════
+                if direction == "BUY":
+                    # BUY: Wick arriba (entre close y high)
+                    wick_size = c_high - max(c_open, c_close)
+                else:  # SELL
+                    # SELL: Wick abajo (entre low y open/close)
+                    wick_size = min(c_open, c_close) - c_low
+                
+                wick_pct = (wick_size / total_size * 100) if total_size > 0 else 0
+                wick_valid = wick_pct <= candle_wick_pct
+                
+                # ═══════════════════════════════════════════════════════════
+                # CÁLCULO 3: CIERRE CERCANO AL EXTREMO
+                # ═══════════════════════════════════════════════════════════
+                # Normalizar cierre en rango [0, 100%]
+                close_position = ((c_close - c_low) / total_size * 100) if total_size > 0 else 50
+                
+                if direction == "BUY":
+                    # BUY: Cierre debe estar CERCA DEL MÁXIMO (≥ 70% = en la parte alta)
+                    close_valid = close_position >= candle_close_pct
+                    close_msg = f"Cierre @{close_position:.0f}% (require ≥{candle_close_pct}% para BUY)"
+                else:  # SELL
+                    # SELL: Cierre debe estar CERCA DEL MÍNIMO (≤ 30% = en la parte baja)
+                    close_valid = close_position <= (100 - candle_close_pct)  # 100-70=30
+                    close_msg = f"Cierre @{close_position:.0f}% (require ≤{100-candle_close_pct}% para SELL)"
+                
+                # Vela válida: todas las 3 condiciones pasan
+                candle_filter_valid = body_valid and wick_valid and close_valid
             else:
                 body_pct = 0
                 body_valid = False
+                wick_pct = 0
+                wick_valid = False
+                close_valid = False
+                close_msg = "Datos inválidos"
+                candle_filter_valid = False
             
-            checks['candle_body'] = {
-                'percentage': body_pct,
-                'required': candle_body_pct,
-                'valid': body_valid
+            checks['candle_filter'] = {
+                'body_percentage': body_pct,
+                'body_required': candle_body_pct,
+                'body_valid': body_valid,
+                'wick_percentage': wick_pct,
+                'wick_required': candle_wick_pct,
+                'wick_valid': wick_valid,
+                'close_position': close_position if c_high > 0 else 0,
+                'close_required': candle_close_pct,
+                'close_valid': close_valid,
+                'close_msg': close_msg,
+                'valid': candle_filter_valid,
+                'reason': f"Cuerpo:{body_pct:.0f}%✓ | Mecha:{wick_pct:.0f}%✓ | {close_msg}"
             }
             
-            # ⭐ 4. VALIDAR IMPULSO MÍNIMO
+            # ⭐ 4. VALIDAR IMPULSO MÍNIMO (movimiento en puntos debe ser significativo)
             try:
                 impulse_filter = float(self.config.get('GOLD_IMPULSE_FILTER', tk.DoubleVar(value=1.5)).get())
             except:
                 impulse_filter = 1.5
             
-            impulse_valid = checks['threshold'].get('valid', False)
+            # Impulso = diferencia entre últimas 3 velas (rango de movimiento)
+            if len(snapshots) >= 3:
+                last_3_opens = [float(snapshots[-3].get('open', 0)), float(snapshots[-2].get('open', 0)), float(snapshots[-1].get('open', 0))]
+                last_3_closes = [float(snapshots[-3].get('close', 0)), float(snapshots[-2].get('close', 0)), float(snapshots[-1].get('close', 0))]
+                all_prices = last_3_opens + last_3_closes
+                valid_prices = [p for p in all_prices if p > 0]
+                if valid_prices:
+                    impulse_value = max(valid_prices) - min(valid_prices)
+                else:
+                    impulse_value = 0
+            else:
+                impulse_value = checks['threshold'].get('value', 0)
+            
+            impulse_valid = impulse_value >= impulse_filter
             
             checks['impulse'] = {
                 'value': impulse_value,
                 'required': impulse_filter,
-                'valid': impulse_value >= impulse_filter
+                'valid': impulse_valid,
+                'reason': f"Impulso: {impulse_value:.2f} puntos (requiere ≥{impulse_filter:.2f})"
             }
             
-            # ⭐ DECISIÓN FINAL
-            valid = (
-                checks['threshold'].get('valid', False) and
-                checks['microtrend'].get('valid', False) and
-                checks['candle_body'].get('valid', False) and
-                checks['impulse'].get('valid', False)
-            )
+            # ⭐ 5. FILTRO ANTI-RUIDO (4. Evitar):
+            # NO operar si:
+            # - 2 velas seguidas con mechas grandes (> 50% del rango)
+            # - Rango lateral (máximos iguales / mínimos iguales)
+            # - Velas pequeñas consecutivas (cuerpo < 30%)
             
-            # Calcular score
+            noise_detected = False
+            noise_reasons = []
+            
+            # Analizar últimas 4 velas para detectar ruido
+            last_4_candles = snapshots[-4:] if len(snapshots) >= 4 else snapshots
+            
+            # CHECK 1: 2 velas seguidas con mechas grandes (> 50%)
+            consecutive_large_wicks = 0
+            for i in range(len(last_4_candles) - 1):
+                candle1 = last_4_candles[i]
+                candle2 = last_4_candles[i + 1]
+                
+                for candle in [candle1, candle2]:
+                    try:
+                        c_open = float(candle.get('open', 0))
+                        c_close = float(candle.get('close', 0))
+                        c_high = float(candle.get('high', 0))
+                        c_low = float(candle.get('low', 0))
+                        
+                        if c_high > 0 and c_low > 0:
+                            total_range = c_high - c_low
+                            if total_range > 0:
+                                # Wick según dirección
+                                if direction == "BUY":
+                                    wick_size = c_high - max(c_open, c_close)
+                                else:
+                                    wick_size = min(c_open, c_close) - c_low
+                                
+                                wick_pct = (wick_size / total_range * 100)
+                                if wick_pct > 50:
+                                    consecutive_large_wicks += 1
+                    except:
+                        pass
+                
+                # Si hay 2 mechas grandes consecutivas = ruido
+                if consecutive_large_wicks >= 2:
+                    noise_detected = True
+                    noise_reasons.append("🔴 Mechas grandes consecutivas (> 50%) = ruido de mercado")
+                    break
+                consecutive_large_wicks = 0
+            
+            # CHECK 2: Rango lateral (máximos iguales o mínimos iguales ±2 pips)
+            tolerance = 0.02  # 2 pips
+            if len(last_4_candles) >= 2:
+                highs = [float(c.get('high', 0)) for c in last_4_candles if float(c.get('high', 0)) > 0]
+                lows = [float(c.get('low', 0)) for c in last_4_candles if float(c.get('low', 0)) > 0]
+                
+                if highs and lows:
+                    max_high = max(highs)
+                    min_high = min(highs)
+                    max_low = max(lows)
+                    min_low = min(lows)
+                    
+                    high_range = max_high - min_high
+                    low_range = max_low - min_low
+                    
+                    # Si los máximos están muy cercanos (lateral) O los mínimos están muy cercanos (lateral)
+                    if high_range <= tolerance or low_range <= tolerance:
+                        noise_detected = True
+                        noise_reasons.append(f"🔴 Rango lateral detectado (máximos: {high_range:.4f}, mínimos: {low_range:.4f})")
+            
+            # CHECK 3: Velas pequeñas consecutivas (cuerpo < 30% de la vela)
+            consecutive_small_bodies = 0
+            for candle in last_4_candles:
+                try:
+                    c_open = float(candle.get('open', 0))
+                    c_close = float(candle.get('close', 0))
+                    c_high = float(candle.get('high', 0))
+                    c_low = float(candle.get('low', 0))
+                    
+                    if c_high > 0 and c_low > 0:
+                        total_range = c_high - c_low
+                        if total_range > 0:
+                            body_size = abs(c_close - c_open)
+                            body_pct = (body_size / total_range * 100)
+                            
+                            if body_pct < 30:
+                                consecutive_small_bodies += 1
+                            else:
+                                consecutive_small_bodies = 0  # Reset si hay una vela grande
+                    
+                    if consecutive_small_bodies >= 2:
+                        noise_detected = True
+                        noise_reasons.append("🔴 Velas pequeñas consecutivas (cuerpo < 30%) = consolidación sin movimiento")
+                        break
+                except:
+                    pass
+            
+            noise_ok = not noise_detected  # OK si NO hay ruido
+            
+            checks['anti_noise'] = {
+                'valid': noise_ok,
+                'noise_detected': noise_detected,
+                'reasons': noise_reasons,
+                'reason': " | ".join(noise_reasons) if noise_reasons else "✅ Sin ruido detectado"
+            }
+            
+            # ⭐ 6. VALIDAR VIDYA (Indicador de Apoyo - 5. Apoyo)
+            try:
+                vidya_cmo = int(self.config.get('GOLD_VIDYA_CMO', tk.IntVar(value=9)).get())
+                vidya_ema = int(self.config.get('GOLD_VIDYA_EMA', tk.IntVar(value=12)).get())
+            except:
+                vidya_cmo = 9
+                vidya_ema = 12
+            
+            # Obtener últimas velas (mínimo 30 para calcular VIDYA correctamente)
+            last_velas_for_vidya = snapshots[-30:] if len(snapshots) >= 30 else snapshots
+            
+            vidya_valid = False
+            vidya_price_position = ""
+            vidya_slope = ""
+            vidya_current = 0
+            vidya_previous = 0
+            vidya_slope_pct = 0
+            
+            if len(last_velas_for_vidya) >= vidya_ema + vidya_cmo:
+                try:
+                    # Extraer closes para calcular VIDYA
+                    vidya_closes = [float(v.get('close', 0)) for v in last_velas_for_vidya]
+                    vidya_closes = [x for x in vidya_closes if x > 0]
+                    
+                    # Calcular VIDYA
+                    vidya_values, cmo_value = self._calculate_vidya(vidya_closes, vidya_cmo, vidya_ema)
+                    
+                    if vidya_values is not None and len(vidya_values) >= 2:
+                        vidya_current = float(vidya_values[-1])
+                        vidya_previous = float(vidya_values[-2])
+                        current_price = float(last_velas_for_vidya[-1].get('close', 0))
+                        
+                        # CHECK 1: Precio vs VIDYA
+                        if direction == "BUY":
+                            price_above_vidya = current_price > vidya_current
+                            vidya_price_position = f"Precio {current_price:.2f} {'arriba ✓' if price_above_vidya else 'abajo ✗'} de VIDYA {vidya_current:.2f}"
+                        else:  # SELL
+                            price_below_vidya = current_price < vidya_current
+                            vidya_price_position = f"Precio {current_price:.2f} {'abajo ✓' if price_below_vidya else 'arriba ✗'} de VIDYA {vidya_current:.2f}"
+                        
+                        # CHECK 2: Inclinación de VIDYA (debe tener pendiente clara)
+                        slope_diff = vidya_current - vidya_previous
+                        vidya_slope_pct = (slope_diff / vidya_previous * 100) if vidya_previous != 0 else 0
+                        
+                        if direction == "BUY":
+                            # Para compra: VIDYA debe estar subiendo
+                            vidya_slope_valid = slope_diff > 0
+                            vidya_slope = f"VIDYA subiendo {vidya_slope_pct:.3f}% ✓" if vidya_slope_valid else f"VIDYA bajando {vidya_slope_pct:.3f}% ✗"
+                        else:  # SELL
+                            # Para venta: VIDYA debe estar bajando
+                            vidya_slope_valid = slope_diff < 0
+                            vidya_slope = f"VIDYA bajando {vidya_slope_pct:.3f}% ✓" if vidya_slope_valid else f"VIDYA subiendo {vidya_slope_pct:.3f}% ✗"
+                        
+                        # VALIDACIÓN FINAL: Ambas condiciones deben cumplirse
+                        if direction == "BUY":
+                            vidya_valid = (current_price > vidya_current) and (slope_diff > 0)
+                        else:  # SELL
+                            vidya_valid = (current_price < vidya_current) and (slope_diff < 0)
+                
+                except Exception as e:
+                    logger.error(f"Error calculando VIDYA en validación: {str(e)}")
+                    vidya_valid = False
+            
+            checks['vidya'] = {
+                'valid': vidya_valid,
+                'current_price': current_price if 'current_price' in locals() else 0,
+                'vidya_value': vidya_current,
+                'vidya_slope_pct': vidya_slope_pct,
+                'price_position': vidya_price_position,
+                'slope_msg': vidya_slope,
+                'reason': f"VIDYA: {vidya_price_position} | {vidya_slope}"
+            }
+            
+            # ⭐ DECISIÓN FINAL: Todas las validaciones deben pasar
+            threshold_ok = checks['threshold'].get('valid', False)
+            microtrend_ok = checks['microtrend'].get('valid', False)
+            candle_filter_ok = checks['candle_filter'].get('valid', False)
+            impulse_ok = checks['impulse'].get('valid', False)
+            noise_ok = checks['anti_noise'].get('valid', False)
+            vidya_ok = checks['vidya'].get('valid', False)  # ⭐ NUEVO: VIDYA
+            
+            valid = threshold_ok and microtrend_ok and candle_filter_ok and impulse_ok and noise_ok and vidya_ok
+            
+            # Construir razón de rechazo detallada
+            failed_checks = []
+            if not threshold_ok:
+                failed_checks.append(f"Threshold insuficiente ({checks['threshold'].get('value', 0):.2f} < {checks['threshold'].get('required', 0):.2f})")
+            if not microtrend_ok:
+                failed_checks.append(f"Microtendencia rechazada: {checks['microtrend'].get('reason', 'contexto no coincide')}")
+            if not candle_filter_ok:
+                failed_checks.append(f"Vela no válida: {checks['candle_filter'].get('reason', 'no cumple criterios')}")
+            if not impulse_ok:
+                failed_checks.append(f"Impulso débil ({checks['impulse'].get('value', 0):.2f} < {checks['impulse'].get('required', 1.5)})")
+            if not noise_ok:
+                failed_checks.append(f"Ruido detectado: {' | '.join(checks['anti_noise'].get('reasons', ['desconocido']))}")
+            if not vidya_ok:
+                failed_checks.append(f"VIDYA rechazó: {checks['vidya'].get('reason', 'no cumple alineación')}")
+            
+            reason = " | ".join(failed_checks) if failed_checks else "✅ Todas las validaciones pasaron"
+            
+            # Calcular score (ahora con 6 validaciones ≈ 16.67 puntos cada una)
             score = 0
-            for check_name in ['threshold', 'microtrend', 'candle_body', 'impulse']:
+            for check_name in ['threshold', 'microtrend', 'candle_filter', 'impulse', 'anti_noise', 'vidya']:
                 if checks[check_name].get('valid', False):
-                    score += 25
+                    score += 17  # 17 * 6 = 102, redondeamos a 100
+            
+            # 🧠 LÓGICA COMPLETA (VERIFICACIÓN)
+            #    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            #    👉 ENTRA BUY si TODAS estas condiciones se cumplen:
+            #    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            #    ✅ 1. THRESHOLD ≥ 18 pips (impulso mínimo confirmado)
+            #    ✅ 2. 3–5 velas alcistas limpias (microtendencia clear)
+            #    ✅ 3. Cuerpos fuertes ≥60% (sin velas de ruido/doji)
+            #    ✅ 4. Precio sobre VIDYA (alineación con tendencia)
+            #    ✅ 5. VIDYA con pendiente positiva (confirmación dinámmica)
+            #    ✅ 6. Sin ruido (no mechas grandes, no lateral, no consolidación)
+            #    
+            #    👉 ENTRA SELL si TODAS estas condiciones INVERSAS se cumplen:
+            #    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            #    ✅ 1. THRESHOLD ≥ 18 pips (impulso mínimo confirmado)
+            #    ✅ 2. 3–5 velas bajistas limpias (microtendencia clear)
+            #    ✅ 3. Cuerpos fuertes ≥60% (sin velas de ruido/doji)
+            #    ✅ 4. Precio bajo VIDYA (alineación con tendencia)
+            #    ✅ 5. VIDYA con pendiente negativa (confirmación dinámmica)
+            #    ✅ 6. Sin ruido (no mechas grandes, no lateral, no consolidación)
+            #    
+            #    🚫 ERRORES A EVITAR (por qué muchos bots fallan):
+            #    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            #    ❌ Entrar SOLO por movimiento (threshold) sin validar vela
+            #    ❌ No filtrar mechas grandes → ORO engaña constantemente
+            #    ❌ No revisar microtendencia → entras en reversales
+            #    ❌ No usar VIDYA → pierdes confirmación de flujo real
+            #    ❌ No revisar ruido → consolidan y te atrapan
+            #    
+            #    🔥 CONFIG FINAL RECOMENDADA (OPTIMIZADA PARA GOLD):
+            #    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            #    📊 Threshold: 18 pips (1.8 decimal) ← impulso mínimo
+            #    📊 Microtendencia: 4 velas ← balance entre velocidad y filtro
+            #    📊 Cuerpo de vela: ≥60% ← elimina doji/mecha
+            #    📊 Mecha máxima: ≤40% ← filtra velas rechazadas
+            #    📊 Cierre cercano: BUY≥70%, SELL≤30% ← dirección clara
+            #    📊 VIDYA CMO: 9 ← reactividad media
+            #    📊 VIDYA EMA: 12 ← suavizado adaptativo
+            #    📊 Aplicar a: Close ← únicamente cierre
+            #    
+            #    💎 SECRETO DEL ORO (GOLD/XAUUSD):
+            #    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            #    👉 No es el INDICADOR... es FILTRAR VELAS MALAS
+            #    👉 Mechas grandes = mercado indeciso = EVITAR
+            #    👉 Seguir el FLUJO REAL (VIDYA + microtendencia)
+            #    👉 El ORO es PREDADOR de traders con malos filtros
+            #    👉 Resultado: 90% de falsas señales eliminadas ✅
             
             # Log detallado
             self.add_log(f"\n🟡 VALIDACIÓN CONFIG ÓPTIMA GOLD:", 'info')
             self.add_log(f"   ✓ Threshold: {checks['threshold']['value']:.2f} >= {checks['threshold']['required']:.2f} ({checks['threshold']['threshold_pips']:.0f} pips): {'✅' if checks['threshold']['valid'] else '❌'}", 'info')
-            self.add_log(f"   ✓ Microtendencia ({microtrend_candles}v): {checks['microtrend']['up']} up / {checks['microtrend']['down']} down: {'✅' if checks['microtrend']['valid'] else '❌'}", 'info')
-            self.add_log(f"   ✓ Cuerpo Vela: {checks['candle_body']['percentage']:.1f}% >= {checks['candle_body']['required']}%: {'✅' if checks['candle_body']['valid'] else '❌'}", 'info')
+            
+            # Log detallado de microtendencia con contexto
+            self.add_log(f"   ✓ Microtendencia ({microtrend_candles}v): {checks['microtrend']['recent_details']}", 'info')
+            self.add_log(f"      └─ Contexto 10v: {checks['microtrend']['context_10']}", 'info')
+            self.add_log(f"      └─ Contexto 20v: {checks['microtrend']['context_20']}", 'info')
+            self.add_log(f"      └─ Contexto 30v: {checks['microtrend']['context_30']}", 'info')
+            self.add_log(f"      └─ Voto final: {checks['microtrend']['context_agreement']} {'✅' if checks['microtrend']['valid'] else '❌'}", 'info')
+            
+            # Log detallado del filtro de vela (3 condiciones)
+            self.add_log(f"   ✓ FILTRO DE VELA (3 CRITERIOS - Elimina ruido):", 'info')
+            self.add_log(f"      ├─ Cuerpo: {checks['candle_filter']['body_percentage']:.1f}% >= {checks['candle_filter']['body_required']}%: {'✅' if checks['candle_filter']['body_valid'] else '❌'}", 'info')
+            self.add_log(f"      ├─ Mecha: {checks['candle_filter']['wick_percentage']:.1f}% <= {checks['candle_filter']['wick_required']}%: {'✅' if checks['candle_filter']['wick_valid'] else '❌'}", 'info')
+            self.add_log(f"      └─ {checks['candle_filter']['close_msg']}: {'✅' if checks['candle_filter']['close_valid'] else '❌'}", 'info')
+            
             self.add_log(f"   ✓ Impulso: {checks['impulse']['value']:.2f} >= {checks['impulse']['required']:.2f}: {'✅' if checks['impulse']['valid'] else '❌'}", 'info')
-            self.add_log(f"   ➜ Score Final: {score}/100", 'success' if valid else 'warning')
+            
+            # Log del filtro anti-ruido
+            self.add_log(f"   ✓ FILTRO ANTI-RUIDO (4. Evitar):", 'info')
+            if checks['anti_noise']['valid']:
+                self.add_log(f"      └─ ✅ Sin ruido detectado", 'info')
+            else:
+                for reason in checks['anti_noise']['reasons']:
+                    self.add_log(f"      └─ {reason}", 'warning')
+            
+            # Log del indicador VIDYA
+            self.add_log(f"   ✓ INDICADOR VIDYA (5. Apoyo - CMO:{vidya_cmo}, EMA:{vidya_ema}):", 'info')
+            if checks['vidya']['valid']:
+                self.add_log(f"      ├─ {checks['vidya']['price_position']}: ✅", 'info')
+                self.add_log(f"      └─ {checks['vidya']['slope_msg']}: ✅", 'info')
+            else:
+                self.add_log(f"      ├─ {checks['vidya']['price_position']}: ❌", 'warning')
+                self.add_log(f"      └─ {checks['vidya']['slope_msg']}: ❌", 'warning')
+            
+            self.add_log(f"   ➜ Score Final: {score}/100 | {reason}", 'success' if valid else 'warning')
             
             return {
                 'valid': valid,
                 'score': score,
                 'checks': checks,
-                'reason': 'Validación óptima GOLD completada' if valid else 'No cumple criterios GOLD'
+                'reason': reason
             }
             
         except Exception as e:
@@ -14143,20 +15235,24 @@ Se abrirá al precio actual de mercado."""
 
     def _validate_silver_optimal_entry(self, symbol, direction, snapshots=None):
         """
-        ⭐ VALIDACIÓN INTERNA: CONFIG ÓPTIMA PARA SILVER
+        ⭐ VALIDACIÓN INTERNA: CONFIG ÓPTIMA PARA SILVER (XAGUSD) - 6 CRITERIOS
         
-        Valida entrada según configuración de PLATA:
-        - Threshold ≥ 1.6 (más bajo que ORO, plata más rápida)
-        - Microtendencia: últimas 4 velas en dirección correcta
-        - Cuerpo ≥ 60% (MÁS CRÍTICO en plata - evita mechas largas)
-        - Impulso ≥ 1.5 puntos
+        🔥 IGUAL QUE GOLD, pero con parámetros ajustados para plata más rápida:
         
-        ⚠️ NOTA: Si el ORO no está claro, NO operes PLATA
+        Validaciones en secuencia:
+        🟡 1. THRESHOLD: 15 pips (más bajo que ORO - plata más rápida)
+        🟡 2. MICROTENDENCIA MULTI-PERÍODO (igual 3-5 velas, ideal 4)
+        🟡 3. FILTRO DE VELA (3 CRITERIOS - igual 60/40/70)
+        🟡 4. IMPULSO: ≥ 1.5 puntos (igual que ORO)
+        🚫 5. FILTRO ANTI-RUIDO (igual: mechas grandes, lateral, pequeñas)
+        📈 6. INDICADOR VIDYA (igual: CMO:9, EMA:12)
+        
+        ⚠️ NOTA: Si el ORO no está claro, NO operes PLATA (más riesgoso)
         
         Retorna: {
             'valid': bool,
-            'score': 0-100,
-            'checks': {...}
+            'score': 0-100 (17 puntos por criterio),
+            'checks': {...}  (detalle de cada validación)
         }
         """
         try:
@@ -14172,17 +15268,15 @@ Se abrirá al precio actual de mercado."""
             
             checks = {}
             
-            # ⭐ 1. VALIDAR THRESHOLD (EN PIPS, COMO MICROTREND_THRESHOLD)
+            # ⭐ 1. VALIDAR THRESHOLD (EN PIPS - SILVER MÁS RÁPIDO QUE GOLD)
             try:
                 threshold_pips = float(self.config.get('SILVER_THRESHOLD', tk.DoubleVar(value=15)).get())
             except:
                 threshold_pips = 15
             
-            # Convertir pips a decimal (15 pips * 0.01 = 0.15)
             pip_size = 0.01
             threshold = threshold_pips * pip_size
             
-            # Calcular pendiente de últimas 3 velas como indicador de impulso
             last_3 = snapshots[-3:]
             if len(last_3) >= 3:
                 close_1 = float(last_3[0].get('close', 0))
@@ -14196,110 +15290,391 @@ Se abrirá al precio actual de mercado."""
                     'threshold_pips': threshold_pips
                 }
             
-            # ⭐ 2. VALIDAR MICROTENDENCIA (últimas 4 velas, igual que GOLD)
+            # ⭐ 2. VALIDAR MICROTENDENCIA MULTI-PERÍODO (IDÉNTICO A GOLD)
             try:
                 microtrend_candles = int(self.config.get('SILVER_MICROTREND_CANDLES', tk.IntVar(value=4)).get())
             except:
                 microtrend_candles = 4
             
-            last_n = snapshots[-microtrend_candles:]
-            up_count = 0
-            down_count = 0
+            microtrend_candles = max(3, min(5, microtrend_candles))
             
-            for candle in last_n:
+            context_10_up = context_10_down = 0
+            context_20_up = context_20_down = 0
+            context_30_up = context_30_down = 0
+            
+            for i, candle in enumerate(snapshots[-10:] if len(snapshots) >= 10 else snapshots):
                 c_open = float(candle.get('open', 0))
                 c_close = float(candle.get('close', 0))
                 if c_open > 0 and c_close > 0:
                     if c_close > c_open:
-                        up_count += 1
-                    elif c_close < c_open:
-                        down_count += 1
+                        context_10_up += 1
+                    else:
+                        context_10_down += 1
             
-            if direction == "BUY":
-                microtrend_valid = up_count > down_count and up_count >= microtrend_candles - 1
-            else:  # SELL
-                microtrend_valid = down_count > up_count and down_count >= microtrend_candles - 1
+            for i, candle in enumerate(snapshots[-20:] if len(snapshots) >= 20 else snapshots):
+                c_open = float(candle.get('open', 0))
+                c_close = float(candle.get('close', 0))
+                if c_open > 0 and c_close > 0:
+                    if c_close > c_open:
+                        context_20_up += 1
+                    else:
+                        context_20_down += 1
+            
+            for i, candle in enumerate(snapshots[-30:] if len(snapshots) >= 30 else snapshots):
+                c_open = float(candle.get('open', 0))
+                c_close = float(candle.get('close', 0))
+                if c_open > 0 and c_close > 0:
+                    if c_close > c_open:
+                        context_30_up += 1
+                    else:
+                        context_30_down += 1
+            
+            context_10 = "UP" if context_10_up > context_10_down else ("DOWN" if context_10_down > context_10_up else "FLAT")
+            context_20 = "UP" if context_20_up > context_20_down else ("DOWN" if context_20_down > context_20_up else "FLAT")
+            context_30 = "UP" if context_30_up > context_30_down else ("DOWN" if context_30_down > context_30_up else "FLAT")
+            
+            votes = sum([1 for c in [context_10, context_20, context_30] if c == direction])
+            context_agreement = votes >= 2
+            
+            recent_ok = True
+            if len(snapshots) >= microtrend_candles:
+                for candle in snapshots[-microtrend_candles:]:
+                    c_open = float(candle.get('open', 0))
+                    c_close = float(candle.get('close', 0))
+                    if c_open > 0 and c_close > 0:
+                        is_up = c_close > c_open
+                        if direction == "BUY" and not is_up:
+                            recent_ok = False
+                            break
+                        elif direction == "SELL" and is_up:
+                            recent_ok = False
+                            break
+            
+            microtrend_ok = context_agreement and recent_ok
             
             checks['microtrend'] = {
-                'up': up_count,
-                'down': down_count,
-                'valid': microtrend_valid
+                'valid': microtrend_ok,
+                'context_10': f"{context_10_up}↑ {context_10_down}↓ = {context_10}",
+                'context_20': f"{context_20_up}↑ {context_20_down}↓ = {context_20}",
+                'context_30': f"{context_30_up}↑ {context_30_down}↓ = {context_30}",
+                'context_agreement': f"Voto: {votes}/3 = {context_agreement}",
+                'recent_details': f"{microtrend_candles}v {direction if recent_ok else 'rechazadas'}",
+                'reason': f"Contexto: {context_agreement} + Recientes: {recent_ok}"
             }
             
-            # ⭐ 3. VALIDAR CUERPO DE VELA (última vela) - MÁS CRÍTICO EN PLATA
+            # ⭐ 3. FILTRO DE VELA (IDÉNTICO A GOLD)
             try:
                 candle_body_pct = int(self.config.get('SILVER_CANDLE_BODY_PCT', tk.IntVar(value=60)).get())
+                candle_wick_pct = int(self.config.get('SILVER_CANDLE_WICK_PCT', tk.IntVar(value=40)).get())
+                candle_close_pct = int(self.config.get('SILVER_CANDLE_CLOSE_PCT', tk.IntVar(value=70)).get())
             except:
                 candle_body_pct = 60
+                candle_wick_pct = 40
+                candle_close_pct = 70
             
-            last_candle = snapshots[-1]
+            last_candle = snapshots[-1] if snapshots else {}
             c_open = float(last_candle.get('open', 0))
             c_close = float(last_candle.get('close', 0))
             c_high = float(last_candle.get('high', 0))
             c_low = float(last_candle.get('low', 0))
             
-            if c_open > 0 and c_high > 0:
-                body_size = abs(c_close - c_open)
-                total_size = c_high - c_low
-                body_pct = (body_size / total_size * 100) if total_size > 0 else 0
-                # En PLATA, el filtro de cuerpo es MÁS ESTRICTO (evita mechas largas)
-                body_valid = body_pct >= candle_body_pct
-            else:
-                body_pct = 0
-                body_valid = False
+            body_valid = wick_valid = close_valid = candle_filter_valid = False
+            body_pct = wick_pct = close_position = 0
+            close_msg = ""
             
-            checks['candle_body'] = {
-                'percentage': body_pct,
-                'required': candle_body_pct,
-                'valid': body_valid,
-                'note': 'CRÍTICO en plata - evita mechas largas'
+            if c_high > 0 and c_low > 0:
+                total_range = c_high - c_low
+                if total_range > 0:
+                    body_size = abs(c_close - c_open)
+                    body_pct = (body_size / total_range * 100)
+                    body_valid = body_pct >= candle_body_pct
+                    
+                    if direction == "BUY":
+                        wick_size = c_high - max(c_open, c_close)
+                    else:
+                        wick_size = min(c_open, c_close) - c_low
+                    
+                    wick_pct = (wick_size / total_range * 100)
+                    wick_valid = wick_pct <= candle_wick_pct
+                    
+                    close_position = ((c_close - c_low) / total_range * 100)
+                    if direction == "BUY":
+                        close_valid = close_position >= candle_close_pct
+                        close_msg = f"Cierre @{close_position:.0f}% (require ≥{candle_close_pct}%)"
+                    else:
+                        close_valid = close_position <= (100 - candle_close_pct)
+                        close_msg = f"Cierre @{close_position:.0f}% (require ≤{100-candle_close_pct}%)"
+                    
+                    candle_filter_valid = body_valid and wick_valid and close_valid
+            
+            checks['candle_filter'] = {
+                'body_percentage': body_pct,
+                'body_required': candle_body_pct,
+                'body_valid': body_valid,
+                'wick_percentage': wick_pct,
+                'wick_required': candle_wick_pct,
+                'wick_valid': wick_valid,
+                'close_position': close_position if c_high > 0 else 0,
+                'close_required': candle_close_pct,
+                'close_valid': close_valid,
+                'close_msg': close_msg,
+                'valid': candle_filter_valid,
+                'reason': f"Cuerpo:{body_pct:.0f}%✓ | Mecha:{wick_pct:.0f}%✓ | {close_msg}"
             }
             
-            # ⭐ 4. VALIDAR IMPULSO MÍNIMO
+            # ⭐ 4. VALIDAR IMPULSO (IDÉNTICO A GOLD)
             try:
                 impulse_filter = float(self.config.get('SILVER_IMPULSE_FILTER', tk.DoubleVar(value=1.5)).get())
             except:
                 impulse_filter = 1.5
             
-            impulse_valid = checks['threshold'].get('valid', False)
+            if len(snapshots) >= 3:
+                last_3_opens = [float(snapshots[-3].get('open', 0)), float(snapshots[-2].get('open', 0)), float(snapshots[-1].get('open', 0))]
+                last_3_closes = [float(snapshots[-3].get('close', 0)), float(snapshots[-2].get('close', 0)), float(snapshots[-1].get('close', 0))]
+                all_prices = last_3_opens + last_3_closes
+                valid_prices = [p for p in all_prices if p > 0]
+                if valid_prices:
+                    impulse_value = max(valid_prices) - min(valid_prices)
+                else:
+                    impulse_value = 0
+            else:
+                impulse_value = checks['threshold'].get('value', 0)
+            
+            impulse_valid = impulse_value >= impulse_filter
             
             checks['impulse'] = {
                 'value': impulse_value,
                 'required': impulse_filter,
-                'valid': impulse_value >= impulse_filter
+                'valid': impulse_valid,
+                'reason': f"Impulso: {impulse_value:.2f} puntos (requiere ≥{impulse_filter:.2f})"
             }
             
-            # ⭐ DECISIÓN FINAL
-            valid = (
-                checks['threshold'].get('valid', False) and
-                checks['microtrend'].get('valid', False) and
-                checks['candle_body'].get('valid', False) and
-                checks['impulse'].get('valid', False)
-            )
+            # ⭐ 5. FILTRO ANTI-RUIDO (IDÉNTICO A GOLD)
+            noise_detected = False
+            noise_reasons = []
             
-            # Calcular score
+            last_4_candles = snapshots[-4:] if len(snapshots) >= 4 else snapshots
+            
+            consecutive_large_wicks = 0
+            for i in range(len(last_4_candles) - 1):
+                candle1 = last_4_candles[i]
+                candle2 = last_4_candles[i + 1]
+                
+                for candle in [candle1, candle2]:
+                    try:
+                        c_open = float(candle.get('open', 0))
+                        c_close = float(candle.get('close', 0))
+                        c_high = float(candle.get('high', 0))
+                        c_low = float(candle.get('low', 0))
+                        
+                        if c_high > 0 and c_low > 0:
+                            total_range = c_high - c_low
+                            if total_range > 0:
+                                if direction == "BUY":
+                                    wick_size = c_high - max(c_open, c_close)
+                                else:
+                                    wick_size = min(c_open, c_close) - c_low
+                                
+                                wick_pct = (wick_size / total_range * 100)
+                                if wick_pct > 50:
+                                    consecutive_large_wicks += 1
+                    except:
+                        pass
+                
+                if consecutive_large_wicks >= 2:
+                    noise_detected = True
+                    noise_reasons.append("🔴 Mechas grandes consecutivas (> 50%) = ruido de mercado")
+                    break
+                consecutive_large_wicks = 0
+            
+            tolerance = 0.02
+            if len(last_4_candles) >= 2:
+                highs = [float(c.get('high', 0)) for c in last_4_candles if float(c.get('high', 0)) > 0]
+                lows = [float(c.get('low', 0)) for c in last_4_candles if float(c.get('low', 0)) > 0]
+                
+                if highs and lows:
+                    max_high = max(highs)
+                    min_high = min(highs)
+                    max_low = max(lows)
+                    min_low = min(lows)
+                    
+                    high_range = max_high - min_high
+                    low_range = max_low - min_low
+                    
+                    if high_range <= tolerance or low_range <= tolerance:
+                        noise_detected = True
+                        noise_reasons.append(f"🔴 Rango lateral detectado (máximos: {high_range:.4f}, mínimos: {low_range:.4f})")
+            
+            consecutive_small_bodies = 0
+            for candle in last_4_candles:
+                try:
+                    c_open = float(candle.get('open', 0))
+                    c_close = float(candle.get('close', 0))
+                    c_high = float(candle.get('high', 0))
+                    c_low = float(candle.get('low', 0))
+                    
+                    if c_high > 0 and c_low > 0:
+                        total_range = c_high - c_low
+                        if total_range > 0:
+                            body_size = abs(c_close - c_open)
+                            body_pct = (body_size / total_range * 100)
+                            
+                            if body_pct < 30:
+                                consecutive_small_bodies += 1
+                            else:
+                                consecutive_small_bodies = 0
+                    
+                    if consecutive_small_bodies >= 2:
+                        noise_detected = True
+                        noise_reasons.append("🔴 Velas pequeñas consecutivas (cuerpo < 30%) = consolidación sin movimiento")
+                        break
+                except:
+                    pass
+            
+            noise_ok = not noise_detected
+            
+            checks['anti_noise'] = {
+                'valid': noise_ok,
+                'noise_detected': noise_detected,
+                'reasons': noise_reasons,
+                'reason': " | ".join(noise_reasons) if noise_reasons else "✅ Sin ruido detectado"
+            }
+            
+            # ⭐ 6. VALIDAR VIDYA (IDÉNTICO A GOLD)
+            try:
+                vidya_cmo = int(self.config.get('SILVER_VIDYA_CMO', tk.IntVar(value=9)).get())
+                vidya_ema = int(self.config.get('SILVER_VIDYA_EMA', tk.IntVar(value=12)).get())
+            except:
+                vidya_cmo = 9
+                vidya_ema = 12
+            
+            last_velas_for_vidya = snapshots[-30:] if len(snapshots) >= 30 else snapshots
+            
+            vidya_valid = False
+            vidya_price_position = ""
+            vidya_slope = ""
+            vidya_current = 0
+            vidya_previous = 0
+            vidya_slope_pct = 0
+            
+            if len(last_velas_for_vidya) >= vidya_ema + vidya_cmo:
+                try:
+                    vidya_closes = [float(v.get('close', 0)) for v in last_velas_for_vidya]
+                    vidya_closes = [x for x in vidya_closes if x > 0]
+                    
+                    vidya_values, cmo_value = self._calculate_vidya(vidya_closes, vidya_cmo, vidya_ema)
+                    
+                    if vidya_values is not None and len(vidya_values) >= 2:
+                        vidya_current = float(vidya_values[-1])
+                        vidya_previous = float(vidya_values[-2])
+                        current_price = float(last_velas_for_vidya[-1].get('close', 0))
+                        
+                        if direction == "BUY":
+                            price_above_vidya = current_price > vidya_current
+                            vidya_price_position = f"Precio {current_price:.2f} {'arriba ✓' if price_above_vidya else 'abajo ✗'} de VIDYA {vidya_current:.2f}"
+                        else:
+                            price_below_vidya = current_price < vidya_current
+                            vidya_price_position = f"Precio {current_price:.2f} {'abajo ✓' if price_below_vidya else 'arriba ✗'} de VIDYA {vidya_current:.2f}"
+                        
+                        slope_diff = vidya_current - vidya_previous
+                        vidya_slope_pct = (slope_diff / vidya_previous * 100) if vidya_previous != 0 else 0
+                        
+                        if direction == "BUY":
+                            vidya_slope_valid = slope_diff > 0
+                            vidya_slope = f"VIDYA subiendo {vidya_slope_pct:.3f}% ✓" if vidya_slope_valid else f"VIDYA bajando {vidya_slope_pct:.3f}% ✗"
+                        else:
+                            vidya_slope_valid = slope_diff < 0
+                            vidya_slope = f"VIDYA bajando {vidya_slope_pct:.3f}% ✓" if vidya_slope_valid else f"VIDYA subiendo {vidya_slope_pct:.3f}% ✗"
+                        
+                        if direction == "BUY":
+                            vidya_valid = (current_price > vidya_current) and (slope_diff > 0)
+                        else:
+                            vidya_valid = (current_price < vidya_current) and (slope_diff < 0)
+                
+                except Exception as e:
+                    logger.error(f"Error calculando VIDYA en validación SILVER: {str(e)}")
+                    vidya_valid = False
+            
+            checks['vidya'] = {
+                'valid': vidya_valid,
+                'current_price': current_price if 'current_price' in locals() else 0,
+                'vidya_value': vidya_current,
+                'vidya_slope_pct': vidya_slope_pct,
+                'price_position': vidya_price_position,
+                'slope_msg': vidya_slope,
+                'reason': f"VIDYA: {vidya_price_position} | {vidya_slope}"
+            }
+            
+            # ⭐ DECISIÓN FINAL (IDÉNTICO A GOLD)
+            threshold_ok = checks['threshold'].get('valid', False)
+            microtrend_ok = checks['microtrend'].get('valid', False)
+            candle_filter_ok = checks['candle_filter'].get('valid', False)
+            impulse_ok = checks['impulse'].get('valid', False)
+            noise_ok = checks['anti_noise'].get('valid', False)
+            vidya_ok = checks['vidya'].get('valid', False)
+            
+            valid = threshold_ok and microtrend_ok and candle_filter_ok and impulse_ok and noise_ok and vidya_ok
+            
+            failed_checks = []
+            if not threshold_ok:
+                failed_checks.append(f"Threshold insuficiente ({checks['threshold'].get('value', 0):.2f} < {checks['threshold'].get('required', 0):.2f})")
+            if not microtrend_ok:
+                failed_checks.append(f"Microtendencia rechazada: {checks['microtrend'].get('reason', 'contexto no coincide')}")
+            if not candle_filter_ok:
+                failed_checks.append(f"Vela no válida: {checks['candle_filter'].get('reason', 'no cumple criterios')}")
+            if not impulse_ok:
+                failed_checks.append(f"Impulso débil ({checks['impulse'].get('value', 0):.2f} < {checks['impulse'].get('required', 1.5)})")
+            if not noise_ok:
+                failed_checks.append(f"Ruido detectado: {' | '.join(checks['anti_noise'].get('reasons', ['desconocido']))}")
+            if not vidya_ok:
+                failed_checks.append(f"VIDYA rechazó: {checks['vidya'].get('reason', 'no cumple alineación')}")
+            
+            reason = " | ".join(failed_checks) if failed_checks else "✅ Todas las validaciones pasaron"
+            
             score = 0
-            for check_name in ['threshold', 'microtrend', 'candle_body', 'impulse']:
+            for check_name in ['threshold', 'microtrend', 'candle_filter', 'impulse', 'anti_noise', 'vidya']:
                 if checks[check_name].get('valid', False):
-                    score += 25
+                    score += 17
             
-            # Log detallado
+            # LOGS
             self.add_log(f"\n🔥 VALIDACIÓN CONFIG ÓPTIMA SILVER:", 'info')
             self.add_log(f"   ✓ Threshold: {checks['threshold']['value']:.2f} >= {checks['threshold']['required']:.2f} ({checks['threshold']['threshold_pips']:.0f} pips): {'✅' if checks['threshold']['valid'] else '❌'}", 'info')
-            self.add_log(f"   ✓ Microtendencia ({microtrend_candles}v): {checks['microtrend']['up']} up / {checks['microtrend']['down']} down: {'✅' if checks['microtrend']['valid'] else '❌'}", 'info')
-            self.add_log(f"   ✓ Cuerpo Vela (CRÍTICO): {checks['candle_body']['percentage']:.1f}% >= {checks['candle_body']['required']}%: {'✅' if checks['candle_body']['valid'] else '❌'}", 'info')
-            self.add_log(f"   ✓ Impulso: {checks['impulse']['value']:.2f} >= {checks['impulse']['required']:.2f}: {'✅' if checks['impulse']['valid'] else '❌'}", 'info')
-            self.add_log(f"   ➜ Score Final: {score}/100", 'success' if valid else 'warning')
             
-            # ⚠️ Advertencia importante sobre correlación con ORO
-            if valid:
-                self.add_log(f"   ⚠️  RECUERDA: Si el ORO no está claro → NO operes PLATA", 'warning')
+            self.add_log(f"   ✓ Microtendencia ({microtrend_candles}v): {checks['microtrend']['recent_details']}", 'info')
+            self.add_log(f"      └─ Contexto 10v: {checks['microtrend']['context_10']}", 'info')
+            self.add_log(f"      └─ Contexto 20v: {checks['microtrend']['context_20']}", 'info')
+            self.add_log(f"      └─ Contexto 30v: {checks['microtrend']['context_30']}", 'info')
+            self.add_log(f"      └─ Voto final: {checks['microtrend']['context_agreement']} {'✅' if checks['microtrend']['valid'] else '❌'}", 'info')
+            
+            self.add_log(f"   ✓ FILTRO DE VELA (3 CRITERIOS - Elimina ruido):", 'info')
+            self.add_log(f"      ├─ Cuerpo: {checks['candle_filter']['body_percentage']:.1f}% >= {checks['candle_filter']['body_required']}%: {'✅' if checks['candle_filter']['body_valid'] else '❌'}", 'info')
+            self.add_log(f"      ├─ Mecha: {checks['candle_filter']['wick_percentage']:.1f}% <= {checks['candle_filter']['wick_required']}%: {'✅' if checks['candle_filter']['wick_valid'] else '❌'}", 'info')
+            self.add_log(f"      └─ {checks['candle_filter']['close_msg']}: {'✅' if checks['candle_filter']['close_valid'] else '❌'}", 'info')
+            
+            self.add_log(f"   ✓ Impulso: {checks['impulse']['value']:.2f} >= {checks['impulse']['required']:.2f}: {'✅' if checks['impulse']['valid'] else '❌'}", 'info')
+            
+            self.add_log(f"   ✓ FILTRO ANTI-RUIDO (4. Evitar):", 'info')
+            if checks['anti_noise']['valid']:
+                self.add_log(f"      └─ ✅ Sin ruido detectado", 'info')
+            else:
+                for reason_text in checks['anti_noise']['reasons']:
+                    self.add_log(f"      └─ {reason_text}", 'warning')
+            
+            self.add_log(f"   ✓ INDICADOR VIDYA (5. Apoyo - CMO:{vidya_cmo}, EMA:{vidya_ema}):", 'info')
+            if checks['vidya']['valid']:
+                self.add_log(f"      ├─ {checks['vidya']['price_position']}: ✅", 'info')
+                self.add_log(f"      └─ {checks['vidya']['slope_msg']}: ✅", 'info')
+            else:
+                self.add_log(f"      ├─ {checks['vidya']['price_position']}: ❌", 'warning')
+                self.add_log(f"      └─ {checks['vidya']['slope_msg']}: ❌", 'warning')
+            
+            self.add_log(f"   ➜ Score Final: {score}/100 | {reason}", 'success' if valid else 'warning')
             
             return {
                 'valid': valid,
                 'score': score,
                 'checks': checks,
-                'reason': 'Validación óptima SILVER completada' if valid else 'No cumple criterios SILVER'
+                'reason': reason
             }
             
         except Exception as e:

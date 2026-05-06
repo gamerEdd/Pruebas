@@ -111,7 +111,8 @@ class BuySpecialistAI(IndicatorBase):
         """Recibe contexto de sesión del bot para ponderar predicción actual."""
         try:
             self.session_context = context or {}
-        except Exception:
+        except Exception as e:
+            self.log(f"[ERROR] set_session_context: {str(e)}", 'error')
             self.session_context = {}
 
     def _apply_session_context_bias(self, final_score, confidence):
@@ -144,7 +145,8 @@ class BuySpecialistAI(IndicatorBase):
             conf_adj = float(np.clip(confidence + conf_delta, 0.0, 100.0))
             detail = f"session_bias={session_delta:+.1f} conf={conf_delta:+.1f} samples={samples}"
             return score_adj, conf_adj, detail
-        except Exception:
+        except Exception as e:
+            self.log(f"[ERROR] _apply_session_context_bias: {str(e)[:80]}", 'error')
             return float(final_score), float(confidence), "session_bias=error"
 
     def _update_live_signal_cache(self, recommendation, confidence, score):
@@ -161,8 +163,8 @@ class BuySpecialistAI(IndicatorBase):
                 'timestamp': time.time(),
                 'reason': f'BUY specialist rec={rec} conf={conf:.1f} score={scr:.1f}'
             }
-        except Exception:
-            pass
+        except Exception as e:
+            self.log(f"[ERROR] _update_live_signal_cache: {str(e)[:80]}", 'error')
 
     def get_live_open_signal(self, conf_threshold=None, max_age_sec=1.5):
         """Retorna señal de apertura nacida en BUY specialist usando su último análisis."""
@@ -189,7 +191,8 @@ class BuySpecialistAI(IndicatorBase):
             sig['source'] = 'BUY_SPECIALIST'
             sig['threshold'] = thr
             return sig
-        except Exception:
+        except Exception as e:
+            self.log(f"[ERROR] get_live_open_signal: {str(e)[:80]}", 'error')
             return None
     
     def train(self, snapshots):

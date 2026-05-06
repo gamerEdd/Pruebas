@@ -93,6 +93,7 @@ def write_market_snapshots(list_of_snapshots, symbol='XAUUSD', max_snapshots=144
     
     ⭐ NUEVO: Instead of overwriting, APPENDS new snapshots to history.
     Maintains max_snapshots limit (rotates oldest data).
+    ⭐ DUAL SYMBOL: Genera archivos independientes para cada símbolo
     
     Args:
         list_of_snapshots: List of snapshot dicts {timestamp, open, high, low, close, tick_volume}
@@ -100,11 +101,16 @@ def write_market_snapshots(list_of_snapshots, symbol='XAUUSD', max_snapshots=144
         max_snapshots: Max snapshots to keep (default 1440 = 24 hours M1)
     """
     try:
+        # ⭐ NUEVO: Generar ruta independiente por símbolo
+        # Mapear XAUUSD → GOLD, XAGUSD → SILVER para consistencia
+        symbol_name = 'GOLD' if symbol in ['XAUUSD', 'GOLD'] else 'SILVER' if symbol in ['XAGUSD', 'SILVER'] else symbol
+        market_file = os.path.join(LOG_DIR, f'market_snapshots_{symbol_name}.json')
+        
         # Read existing data (if any)
         existing_data = {}
-        if os.path.exists(MARKET_FILE):
+        if os.path.exists(market_file):
             try:
-                with open(MARKET_FILE, 'r', encoding='utf-8') as f:
+                with open(market_file, 'r', encoding='utf-8') as f:
                     existing_data = json.load(f)
             except Exception:
                 existing_data = {}
@@ -113,7 +119,8 @@ def write_market_snapshots(list_of_snapshots, symbol='XAUUSD', max_snapshots=144
         if not isinstance(existing_data, dict) or "snapshots" not in existing_data:
             existing_data = {
                 "metadata": {
-                    "symbol": symbol,
+                    "symbol": symbol_name,
+                    "symbol_mt5": symbol,
                     "timeframe": "M1",
                     "retention_hours": 24,
                     "max_snapshots": max_snapshots
@@ -144,7 +151,7 @@ def write_market_snapshots(list_of_snapshots, symbol='XAUUSD', max_snapshots=144
         existing_data["snapshots"] = existing_snapshots
         
         # Write back
-        with open(MARKET_FILE, 'w', encoding='utf-8') as f:
+        with open(market_file, 'w', encoding='utf-8') as f:
             json.dump(existing_data, f, ensure_ascii=False, indent=2)
     except Exception:
         pass
@@ -163,16 +170,26 @@ def append_market_snapshot(snapshot, symbol='XAUUSD', max_snapshots=1440):
     write_market_snapshots([snapshot], symbol=symbol, max_snapshots=max_snapshots)
 
 
-def rotate_market_snapshots(max_snapshots=1440):
+def rotate_market_snapshots(max_snapshots=1440, symbol='XAUUSD'):
     """Manually rotate (trim) market snapshots to max_snapshots limit.
     
+    ⭐ DUAL SYMBOL: Rota archivos independientes por símbolo
+    
+    Args:
+        max_snapshots: Maximum number of snapshots to keep
+        symbol: Symbol identifier
+        
     Returns: (old_count, new_count, removed_count)
     """
     try:
-        if not os.path.exists(MARKET_FILE):
+        # ⭐ NUEVO: Mapear símbolo a nombre de archivo
+        symbol_name = 'GOLD' if symbol in ['XAUUSD', 'GOLD'] else 'SILVER' if symbol in ['XAGUSD', 'SILVER'] else symbol
+        market_file = os.path.join(LOG_DIR, f'market_snapshots_{symbol_name}.json')
+        
+        if not os.path.exists(market_file):
             return (0, 0, 0)
         
-        with open(MARKET_FILE, 'r', encoding='utf-8') as f:
+        with open(market_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
         
         if not isinstance(data, dict) or "snapshots" not in data:
@@ -191,7 +208,7 @@ def rotate_market_snapshots(max_snapshots=1440):
         if snapshots:
             data["metadata"]["oldest_snapshot"] = snapshots[0].get('timestamp')
         
-        with open(MARKET_FILE, 'w', encoding='utf-8') as f:
+        with open(market_file, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         
         return (old_count, len(snapshots), old_count - len(snapshots))
@@ -199,12 +216,24 @@ def rotate_market_snapshots(max_snapshots=1440):
         return (0, 0, 0)
 
 
-def read_market_snapshots():
-    """Read market snapshots JSON file, return list or [] if missing."""
+def read_market_snapshots(symbol='XAUUSD'):
+    """Read market snapshots JSON file, return list or [] if missing.
+    
+    ⭐ DUAL SYMBOL: Lee archivos independientes por símbolo
+    
+    Args:
+        symbol: Symbol identifier (XAUUSD/GOLD/XAGUSD/SILVER)
+        
+    Returns: List of snapshots or [] if missing
+    """
     try:
-        if not os.path.exists(MARKET_FILE):
+        # ⭐ NUEVO: Mapear símbolo a nombre de archivo
+        symbol_name = 'GOLD' if symbol in ['XAUUSD', 'GOLD'] else 'SILVER' if symbol in ['XAGUSD', 'SILVER'] else symbol
+        market_file = os.path.join(LOG_DIR, f'market_snapshots_{symbol_name}.json')
+        
+        if not os.path.exists(market_file):
             return []
-        with open(MARKET_FILE, 'r', encoding='utf-8') as f:
+        with open(market_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
             # Si es dict con "snapshots", extrae el array
             if isinstance(data, dict) and "snapshots" in data:
@@ -217,15 +246,24 @@ def read_market_snapshots():
         return []
 
 
-def get_market_snapshots_metadata():
+def get_market_snapshots_metadata(symbol='XAUUSD'):
     """Read and return METADATA from market snapshots file.
     
+    ⭐ DUAL SYMBOL: Lee metadatos de archivos independientes
+    
+    Args:
+        symbol: Symbol identifier
+        
     Returns: Dict with metadata or empty dict if file doesn't exist.
     """
     try:
-        if not os.path.exists(MARKET_FILE):
+        # ⭐ NUEVO: Mapear símbolo a nombre de archivo
+        symbol_name = 'GOLD' if symbol in ['XAUUSD', 'GOLD'] else 'SILVER' if symbol in ['XAGUSD', 'SILVER'] else symbol
+        market_file = os.path.join(LOG_DIR, f'market_snapshots_{symbol_name}.json')
+        
+        if not os.path.exists(market_file):
             return {}
-        with open(MARKET_FILE, 'r', encoding='utf-8') as f:
+        with open(market_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
             if isinstance(data, dict) and "metadata" in data:
                 return data["metadata"]

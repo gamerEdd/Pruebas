@@ -292,6 +292,31 @@ class DataLoaderTrainer:
             'data_file': str(self.snapshots_file),
             'file_exists': self.snapshots_file.exists()
         }
+    
+    def get_data_status(self):
+        """Retorna estado de datos con edad de datos en segundos"""
+        status = self.get_status()
+        
+        # Calcular edad de datos basado en último snapshot
+        data_age_seconds = 999
+        if self.market_snapshots and len(self.market_snapshots) > 0:
+            last_snap = self.market_snapshots[-1]
+            if isinstance(last_snap, dict) and 'timestamp' in last_snap:
+                try:
+                    # Parsear timestamp
+                    snap_time_str = last_snap.get('timestamp', '')
+                    if snap_time_str:
+                        snap_time = datetime.fromisoformat(snap_time_str.replace('Z', '+00:00'))
+                        now = datetime.utcnow()
+                        if snap_time.tzinfo:
+                            now = datetime.now(snap_time.tzinfo)
+                        age = (now - snap_time).total_seconds()
+                        data_age_seconds = max(0, int(age))
+                except:
+                    pass
+        
+        status['data_age_seconds'] = data_age_seconds
+        return status
 
 
 # ======================== FUNCIÓN DE BOOTSTRAP ========================

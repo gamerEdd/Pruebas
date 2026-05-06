@@ -4,6 +4,16 @@ y provee funciones fallback cuando ciertas APIs no están presentes.
 """
 from datetime import datetime
 import MetaTrader5 as mt5
+import logging
+import sys
+
+# Setup logging para mt5_safe
+logger = logging.getLogger(__name__)
+handler = logging.StreamHandler(sys.stderr)
+formatter = logging.Formatter('[%(name)s] %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+logger.setLevel(logging.DEBUG)
 
 # Ensure a RateLike wrapper is available for compatibility with code
 # that expects numeric indexing (r[4] -> 'close'). Prefer mt5.RateLike
@@ -46,7 +56,7 @@ def _ensure_rates_list(rates):
         elif isinstance(r, dict):
             out.append(RateLike(r))
         else:
-            # try attribute access (numpy recarray)
+            # Try attribute access (numpy recarray) FIRST
             try:
                 out.append(RateLike({
                     'time': int(r.time),
@@ -58,11 +68,21 @@ def _ensure_rates_list(rates):
                     'spread': int(getattr(r, 'spread', 0)),
                     'real_volume': int(getattr(r, 'real_volume', 0)),
                 }))
-            except Exception:
-                # último recurso: try indexing like tuple
+            except (AttributeError, TypeError, KeyError):
+                # If attribute access fails, try indexing [0]=time, [1]=open, [2]=high, [3]=low, [4]=close
                 try:
-                    out.append(RateLike(_rate_tuple_to_dict(r)))
+                    out.append(RateLike({
+                        'time': int(r[0]),
+                        'open': float(r[1]),
+                        'high': float(r[2]),
+                        'low': float(r[3]),
+                        'close': float(r[4]),
+                        'tick_volume': int(r[5]) if len(r) > 5 else 0,
+                        'spread': int(r[6]) if len(r) > 6 else 0,
+                        'real_volume': int(r[7]) if len(r) > 7 else 0,
+                    }))
                 except Exception:
+                    # Last resort: skip this rate
                     continue
     return out
 
@@ -125,6 +145,7 @@ def _ensure_ticks_list(ticks):
         elif isinstance(t, dict):
             out.append(t)
         else:
+            # Try attribute access FIRST
             try:
                 out.append({
                     'time': int(t.time),
@@ -133,8 +154,19 @@ def _ensure_ticks_list(ticks):
                     'last': float(getattr(t, 'last', t.ask)),
                     'volume': int(getattr(t, 'volume', 1))
                 })
-            except Exception:
-                continue
+            except (AttributeError, TypeError):
+                # If attributes fail, try indexing
+                try:
+                    out.append({
+                        'time': int(t[0]),
+                        'bid': float(t[1]),
+                        'ask': float(t[2]) if len(t) > 2 else float(t[1]),
+                        'last': float(t[3]) if len(t) > 3 else float(t[2]) if len(t) > 2 else float(t[1]),
+                        'volume': int(t[4]) if len(t) > 4 else 1
+                    })
+                except Exception:
+                    # Skip on complete failure
+                    continue
     return out
 
 

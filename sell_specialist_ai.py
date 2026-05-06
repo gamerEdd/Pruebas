@@ -111,7 +111,8 @@ class SellSpecialistAI(IndicatorBase):
         """Recibe contexto de sesión del bot para ponderar predicción actual."""
         try:
             self.session_context = context or {}
-        except Exception:
+        except Exception as e:
+            self.log(f"[ERROR] set_session_context: {str(e)}", 'error')
             self.session_context = {}
 
     def _apply_session_context_bias(self, final_score, confidence):
@@ -189,7 +190,8 @@ class SellSpecialistAI(IndicatorBase):
             sig['source'] = 'SELL_SPECIALIST'
             sig['threshold'] = thr
             return sig
-        except Exception:
+        except Exception as e:
+            self.log(f"[ERROR] get_live_open_signal: {str(e)[:80]}", 'error')
             return None
     
     def train(self, snapshots):
