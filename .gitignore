@@ -1,19 +1,25 @@
-# Ejecutables
+# Ejecutables e Instalables
 *.exe
 *.dll
 *.so
 *.dylib
+*.msi
+*.whl
+*.bat
+*.ps1
 
-# Carpeta de logs
+# Carpeta de logs y datos
 logs/
 log/
 *.log
+data/
+datasets/
+snapshots/
 
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
 .Python
 build/
 develop-eggs/
@@ -38,15 +44,23 @@ MANIFEST
 venv/
 ENV/
 env/
+.venv/
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+*.sublime-workspace
+*.sublime-project
 
 # OS
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
 
 # Archivos compilados de PyInstaller
@@ -54,3 +68,16 @@ Thumbs.db
 *.spec
 dist/
 build/
+
+# Sesiones y cache
+*.session
+*.cache
+.cache/
+*.tmp
+*.temp
+
+# Modelos entrenados
+*.h5
+*.pkl
+*.model
+*.joblib
