@@ -4,20 +4,55 @@ import io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
-import MetaTrader5 as mt5
-import mt5_safe
-import time
-import tkinter as tk
-from tkinter import ttk, scrolledtext, messagebox
-import threading
-from datetime import datetime, timedelta
-import os
+# ⭐ LOGGING A ARCHIVO - Captura TODO lo que sucede en el bot
+import logging
+from logging.handlers import RotatingFileHandler
 
-# -*- coding: utf-8 -*-
-import sys
-import io
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+# Configurar logger global para capturar TODOS los eventos
+LOG_FILE = 'bot_execution.log'
+logger = logging.getLogger('boteddver1')
+logger.setLevel(logging.DEBUG)
+logger.propagate = False  # Evitar duplicados
+
+# Handler para archivo (rotativo, máx 10MB)
+try:
+    fh = RotatingFileHandler(LOG_FILE, maxBytes=10*1024*1024, backupCount=5, encoding='utf-8')
+    fh.setLevel(logging.DEBUG)
+    logger.addHandler(fh)
+except Exception as e:
+    print(f"[WARN] No se pudo crear logger a archivo: {e}")
+
+# Handler para consola con UTF-8 encoding correcto
+try:
+    ch = logging.StreamHandler(sys.stdout)
+    ch.setLevel(logging.INFO)
+    # Configurar encoding UTF-8 con error handler 'replace' para caracteres no soportados
+    if hasattr(ch.stream, 'reconfigure'):
+        ch.stream.reconfigure(encoding='utf-8', errors='replace')
+except Exception as e:
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.INFO)
+
+# Formato detallado
+formatter = logging.Formatter('[%(asctime)s] %(levelname)-8s | %(message)s', datefmt='%H:%M:%S')
+if 'fh' in locals():
+    fh.setFormatter(formatter)
+ch.setFormatter(formatter)
+logger.addHandler(ch)
+
+logger.info("="*80)
+logger.info("INICIANDO BOT boteddver1 - Logs en: " + LOG_FILE)
+logger.info("="*80)
+
+# ⭐ Capturar excepciones no capturadas
+def excepthook(exc_type, exc_value, exc_traceback):
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+    logger.critical("EXCEPCION NO CAPTURADA", exc_info=(exc_type, exc_value, exc_traceback))
+    sys.__excepthook__(exc_type, exc_value, exc_traceback)
+
+sys.excepthook = excepthook
 
 import MetaTrader5 as mt5
 import mt5_safe
@@ -485,6 +520,333 @@ class MT5AdaptiveTradingBot:
         except Exception as e:
             self.add_log(f"[MICROTREND-ERROR] {str(e)[:80]}", 'error')
             return 'FLAT'
+
+    def _analyze_final_4_candles_specialized(self, symbol, snapshots=None):
+        """
+        ⭐ ANÁLISIS BIDIRECCIONAL INTELIGENTE DE LAS ÚLTIMAS 4 VELAS + CONFIG ÓPTIMA
+        NO toma dirección como parámetro - DETERMINA la dirección CORRECTA
+        
+        Integra PARÁMETROS ÓPTIMOS de GUI:
+        - THRESHOLD (impulso mínimo)
+        - CANDLE_BODY_PCT (% body mínimo)
+        - CANDLE_WICK_PCT (% wick máximo)
+        - CANDLE_CLOSE_PCT (% cierre cercano)
+        
+        Analiza AMBAS direcciones (BUY y SELL) y retorna:
+        - La dirección ÓPTIMA (o BLOCK si ambas son débiles)
+        - Confianza en la decisión (0-100%)
+        - Razones de validación para ambas
+        
+        Valida (ambas direcciones):
+        1. Anti-ruido estricto (body > % del rango según CONFIG ÓPTIMA)
+        2. Consistencia de dirección (min 3 de 4 en la misma dirección)
+        3. Impulso creciente (cada vela ≥ 85% anterior)
+        4. Cierre fuerte (close en zona de poder según CONFIG ÓPTIMA)
+        5. Comparación con histórico (no empeoramiento > 15%)
+        6. ⭐ NUEVO: Validación contra CONFIG ÓPTIMA (THRESHOLD + parámetros)
+        
+        Retorna: {
+            'recommended_direction': 'BUY' | 'SELL' | 'BLOCK',
+            'confidence': float (0-100%),
+            'reason': str,
+            'buy_score': float (0-100%),
+            'sell_score': float (0-100%),
+            'score_gap': float,
+            'buy_analysis': dict (detalles),
+            'sell_analysis': dict (detalles),
+            'optimal_config_applied': dict (parámetros usados)
+        }
+        """
+        try:
+            if not snapshots:
+                snapshots = self.get_fresh_market_data(symbol, bars=20) or []
+            
+            if len(snapshots) < 4:
+                return {
+                    'recommended_direction': 'BLOCK',
+                    'confidence': 0.0,
+                    'reason': 'Menos de 4 velas disponibles',
+                    'buy_score': 0.0,
+                    'sell_score': 0.0,
+                    'score_gap': 0.0,
+                    'buy_analysis': {},
+                    'sell_analysis': {},
+                    'optimal_config_applied': {}
+                }
+            
+            # ═══════════════════════════════════════════════════════════
+            # LEER PARÁMETROS ÓPTIMOS DE GUI
+            # ═══════════════════════════════════════════════════════════
+            
+            symbol_check = symbol or self.config.get('SYMBOL', tk.StringVar(value='GOLD')).get()
+            is_gold = 'GOLD' in symbol_check.upper()
+            
+            # Parámetros óptimos para este par
+            if is_gold:
+                try:
+                    threshold_pips = float(self.config.get('GOLD_THRESHOLD', tk.DoubleVar(value=18)).get())
+                    candle_body_pct = int(self.config.get('GOLD_CANDLE_BODY_PCT', tk.IntVar(value=60)).get())
+                    candle_wick_pct = int(self.config.get('GOLD_CANDLE_WICK_PCT', tk.IntVar(value=40)).get())
+                    candle_close_pct = int(self.config.get('GOLD_CANDLE_CLOSE_PCT', tk.IntVar(value=70)).get())
+                except:
+                    threshold_pips = 18
+                    candle_body_pct = 60
+                    candle_wick_pct = 40
+                    candle_close_pct = 70
+            else:  # SILVER
+                try:
+                    threshold_pips = float(self.config.get('SILVER_THRESHOLD', tk.DoubleVar(value=15)).get())
+                    candle_body_pct = int(self.config.get('SILVER_CANDLE_BODY_PCT', tk.IntVar(value=60)).get())
+                    candle_wick_pct = 40  # SILVER usa valores similares
+                    candle_close_pct = 70
+                except:
+                    threshold_pips = 15
+                    candle_body_pct = 60
+                    candle_wick_pct = 40
+                    candle_close_pct = 70
+            
+            optimal_config = {
+                'threshold_pips': threshold_pips,
+                'candle_body_pct': candle_body_pct,
+                'candle_wick_pct': candle_wick_pct,
+                'candle_close_pct': candle_close_pct,
+                'symbol': symbol_check
+            }
+            
+            # Tomar últimas 4 velas y velas 5-14 para comparación histórica
+            last_4 = snapshots[-4:]
+            historical_comparison = snapshots[-14:-4] if len(snapshots) >= 14 else snapshots[-min(10, len(snapshots)-4):]
+            
+            # ═══════════════════════════════════════════════════════════
+            # ANALIZAR AMBAS DIRECCIONES (BUY Y SELL)
+            # ═══════════════════════════════════════════════════════════
+            
+            def _score_direction(direction_target):
+                """Analiza una dirección específica y retorna score detallado INCLUYENDO CONFIG ÓPTIMA"""
+                
+                # 1. ANÁLISIS DE RUIDO (usando parámetros óptimos)
+                total_body = 0
+                total_wicks = 0
+                candle_details = []
+                config_violations = 0  # Contar cuántos cándles violan CONFIG ÓPTIMA
+                config_compliance_score = 100.0  # Empieza perfecto
+                
+                for i, candle in enumerate(last_4):
+                    open_price = float(candle.get('open', 0))
+                    close_price = float(candle.get('close', 0))
+                    high_price = float(candle.get('high', 0))
+                    low_price = float(candle.get('low', 0))
+                    
+                    if open_price <= 0 or close_price <= 0:
+                        continue
+                    
+                    body = abs(close_price - open_price)
+                    upper_wick = high_price - max(open_price, close_price)
+                    lower_wick = min(open_price, close_price) - low_price
+                    total_wicks_vela = upper_wick + lower_wick
+                    candle_range = high_price - low_price
+                    
+                    body_ratio = (body / candle_range) if candle_range > 0 else 0
+                    noise_pct = (total_wicks_vela / candle_range) if candle_range > 0 else 0
+                    
+                    total_body += body
+                    total_wicks += total_wicks_vela
+                    
+                    # ⭐ VALIDAR CONTRA CONFIG ÓPTIMA (cada vela)
+                    body_pct = body_ratio * 100
+                    wick_pct = noise_pct * 100
+                    
+                    body_compliant = body_pct >= candle_body_pct
+                    wick_compliant = wick_pct <= candle_wick_pct
+                    
+                    if not body_compliant or not wick_compliant:
+                        config_violations += 1
+                        config_compliance_score -= 15  # Penalidad por vela no conforme
+                    
+                    candle_details.append({
+                        'direction': 'UP' if close_price > open_price else 'DOWN' if close_price < open_price else 'DOJI',
+                        'body': body,
+                        'body_ratio': body_ratio,
+                        'body_pct': body_pct,
+                        'noise_pct': noise_pct,
+                        'wick_pct': wick_pct,
+                        'range': candle_range,
+                        'close_price': close_price,
+                        'open_price': open_price,
+                        'body_compliant': body_compliant,
+                        'wick_compliant': wick_compliant
+                    })
+                
+                config_compliance_score = max(0, config_compliance_score)
+                
+                noise_ratio = (total_wicks / (total_body + total_wicks)) if (total_body + total_wicks) > 0 else 0
+                noise_score = max(0, 100 - (noise_ratio * 100))
+                
+                # 2. ANÁLISIS DE CONSISTENCIA
+                direction_counts = {'UP': 0, 'DOWN': 0, 'DOJI': 0}
+                for detail in candle_details:
+                    direction_counts[detail['direction']] += 1
+                
+                if direction_target == 'BUY':
+                    consistency_count = direction_counts['UP']
+                    consistency_score = min(100.0, (consistency_count / 3) * 100.0)
+                else:
+                    consistency_count = direction_counts['DOWN']
+                    consistency_score = min(100.0, (consistency_count / 3) * 100.0)
+                
+                # 3. ANÁLISIS DE IMPULSO
+                impulse_count = 0
+                for i in range(1, len(candle_details)):
+                    curr_body = candle_details[i]['body']
+                    prev_body = candle_details[i-1]['body']
+                    if curr_body >= (prev_body * 0.85):
+                        impulse_count += 1
+                
+                impulse_score = min(100.0, (impulse_count / 3) * 100.0)
+                
+                # 4. ANÁLISIS DE FORTALEZA DEL CIERRE (usando CONFIG ÓPTIMA)
+                last_candle = candle_details[-1] if candle_details else {}
+                if last_candle and last_candle['range'] > 0:
+                    if direction_target == 'BUY':
+                        # BUY: close debe estar cerca del máximo
+                        close_range = last_candle['close_price'] - last_candle['open_price']
+                        close_position = ((last_candle['close_price'] - (last_candle['open_price'] - last_candle['range']/2)) / last_candle['range']) * 100
+                        close_position = max(0, min(100, close_position))
+                        # Debe estar ≥ candle_close_pct (ej: 70%) del rango
+                        close_strength = min(100.0, max(0, close_position - (100 - candle_close_pct)) * 2)
+                    else:  # SELL
+                        close_range = last_candle['open_price'] - last_candle['close_price']
+                        close_position = ((last_candle['close_price'] - (last_candle['open_price'] - last_candle['range']/2)) / last_candle['range']) * 100
+                        close_position = max(0, min(100, close_position))
+                        # Debe estar ≤ (100-candle_close_pct) (ej: 30%) del rango
+                        close_strength = min(100.0, max(0, (100 - candle_close_pct - close_position) * 2))
+                else:
+                    close_strength = 0.0
+                
+                # 5. COMPARACIÓN HISTÓRICA
+                if historical_comparison:
+                    historical_body = 0
+                    historical_wicks = 0
+                    for candle in historical_comparison:
+                        o = float(candle.get('open', 0))
+                        c = float(candle.get('close', 0))
+                        h = float(candle.get('high', 0))
+                        l = float(candle.get('low', 0))
+                        if o > 0 and c > 0:
+                            historical_body += abs(c - o)
+                            historical_wicks += (h - max(o, c)) + (min(o, c) - l)
+                    
+                    historical_noise = (historical_wicks / (historical_body + historical_wicks)) if (historical_body + historical_wicks) > 0 else 0
+                    noise_deterioration = noise_ratio - historical_noise
+                else:
+                    noise_deterioration = 0
+                
+                deterioration_penalty = max(0, noise_deterioration * 100) if noise_deterioration > 0.15 else 0
+                
+                # SCORE FINAL (ponderado) - INCLUYENDO CONFIG ÓPTIMA
+                noise_threshold = 0.55 if is_gold else 0.65
+                
+                # Ponderación: Incluir CONFIG ÓPTIMA como factor adicional (15%)
+                overall_score = (
+                    consistency_score * 0.30 +        # Consistencia: 30%
+                    impulse_score * 0.25 +            # Impulso: 25%
+                    close_strength * 0.20 +           # Fortaleza cierre: 20%
+                    noise_score * 0.10 +              # Ruido limpio: 10%
+                    config_compliance_score * 0.15    # ⭐ CONFIG ÓPTIMA: 15%
+                )
+                
+                overall_score = max(0, overall_score - deterioration_penalty)
+                
+                if noise_ratio > noise_threshold:
+                    overall_score = overall_score * 0.5
+                
+                return {
+                    'score': overall_score,
+                    'noise_ratio': noise_ratio,
+                    'consistency_score': consistency_score,
+                    'impulse_score': impulse_score,
+                    'close_strength': close_strength,
+                    'config_compliance_score': config_compliance_score,
+                    'config_violations': config_violations,
+                    'deterioration': noise_deterioration,
+                    'details': candle_details
+                }
+            
+            # Analizar ambas direcciones
+            buy_analysis = _score_direction('BUY')
+            sell_analysis = _score_direction('SELL')
+            
+            buy_score = buy_analysis['score']
+            sell_score = sell_analysis['score']
+            score_gap = abs(buy_score - sell_score)
+            
+            # ═══════════════════════════════════════════════════════════
+            # DETERMINAR RECOMENDACIÓN
+            # ═══════════════════════════════════════════════════════════
+            
+            min_score_threshold = 50.0
+            significant_gap = 15.0
+            
+            if buy_score > sell_score and buy_score > min_score_threshold and score_gap >= significant_gap:
+                recommended_direction = 'BUY'
+                confidence = min(100.0, buy_score)
+                reason = f"BUY claro: score {buy_score:.0f}% > SELL {sell_score:.0f}% (gap {score_gap:.0f}%, compliance {buy_analysis['config_compliance_score']:.0f}%)"
+            
+            elif sell_score > buy_score and sell_score > min_score_threshold and score_gap >= significant_gap:
+                recommended_direction = 'SELL'
+                confidence = min(100.0, sell_score)
+                reason = f"SELL claro: score {sell_score:.0f}% > BUY {buy_score:.0f}% (gap {score_gap:.0f}%, compliance {sell_analysis['config_compliance_score']:.0f}%)"
+            
+            elif buy_score < min_score_threshold and sell_score < min_score_threshold:
+                recommended_direction = 'BLOCK'
+                confidence = 0.0
+                reason = f"❌ AMBAS DÉBILES: BUY {buy_score:.0f}%, SELL {sell_score:.0f}% (ambas < {min_score_threshold:.0f}%)"
+            
+            elif buy_score > sell_score:
+                recommended_direction = 'BUY'
+                confidence = min(100.0, buy_score * (1 - (significant_gap - score_gap) / significant_gap * 0.5))
+                reason = f"BUY mejor (gap pequeño): {buy_score:.0f}% vs SELL {sell_score:.0f}% (compliance {buy_analysis['config_compliance_score']:.0f}%)"
+            
+            else:
+                recommended_direction = 'SELL'
+                confidence = min(100.0, sell_score * (1 - (significant_gap - score_gap) / significant_gap * 0.5))
+                reason = f"SELL mejor (gap pequeño): {sell_score:.0f}% vs BUY {buy_score:.0f}% (compliance {sell_analysis['config_compliance_score']:.0f}%)"
+            
+            self.add_log(
+                f"[ANÁLISIS-FINAL-BIDIRECCIONAL] 🔧 CONFIG ÓPTIMA: threshold={threshold_pips}pips, body≥{candle_body_pct}%, wick≤{candle_wick_pct}%",
+                'info'
+            )
+            self.add_log(
+                f"[ANÁLISIS-FINAL-BIDIRECCIONAL] BUY:{buy_score:.0f}% (compliance {buy_analysis['config_compliance_score']:.0f}%) | SELL:{sell_score:.0f}% (compliance {sell_analysis['config_compliance_score']:.0f}%) | "
+                f"GAP:{score_gap:.0f}% | RECOMENDACIÓN: {recommended_direction} ({confidence:.0f}%)",
+                'success' if recommended_direction != 'BLOCK' else 'warning'
+            )
+            
+            return {
+                'recommended_direction': recommended_direction,
+                'confidence': confidence,
+                'reason': reason,
+                'buy_score': buy_score,
+                'sell_score': sell_score,
+                'score_gap': score_gap,
+                'buy_analysis': buy_analysis,
+                'sell_analysis': sell_analysis,
+                'optimal_config_applied': optimal_config
+            }
+            
+        except Exception as e:
+            self.add_log(f"[ANÁLISIS-FINAL-BIDIRECCIONAL-ERROR] {str(e)[:80]}", 'error')
+            return {
+                'recommended_direction': 'BLOCK',
+                'confidence': 0.0,
+                'reason': f'Error en análisis: {str(e)[:40]}',
+                'buy_score': 0.0,
+                'sell_score': 0.0,
+                'score_gap': 0.0,
+                'buy_analysis': {},
+                'sell_analysis': {},
+                'optimal_config_applied': {}
+            }
 
     def _analyze_10_candles_complete(self, symbol, direction, snapshots=None):
         """
@@ -2546,6 +2908,150 @@ class MT5AdaptiveTradingBot:
             logger.debug(f"[MICRO-MOVE] Error detecting move: {str(e)[:60]}")
             return 0.0
 
+    def _analyze_extreme_candle_reversal(self, snapshots):
+        """
+        ⭐ NUEVO: Detecta velas EXTREMAS y retorna dirección INVERSA para aprovechar reversión
+        
+        LÓGICA:
+        - Si última vela fue EXTREMADAMENTE grande (body > 2x ATR)
+        - Si subió mucho → VENDER (reversión hacia abajo)
+        - Si bajó mucho → COMPRAR (reversión hacia arriba)
+        
+        Retorna: {
+            'reversal_detected': bool,
+            'reversal_direction': 'BUY' o 'SELL',
+            'reversal_strength': 0.0-100.0 (confianza en reversión),
+            'candle_move_pct': float (% del movimiento),
+            'atr_ratio': float (tamaño vela / ATR)
+        }
+        """
+        try:
+            if not snapshots or len(snapshots) < 14:
+                return {
+                    'reversal_detected': False,
+                    'reversal_direction': None,
+                    'reversal_strength': 0.0,
+                    'candle_move_pct': 0.0,
+                    'atr_ratio': 0.0
+                }
+            
+            # ═══════════════════════════════════════════════════════════
+            # PASO 1: Calcular ATR (Average True Range) para normalizar
+            # ═══════════════════════════════════════════════════════════
+            try:
+                highs = np.array([float(s.get('high', 0)) for s in snapshots[-14:]])
+                lows = np.array([float(s.get('low', 0)) for s in snapshots[-14:]])
+                closes = np.array([float(s.get('close', 0)) for s in snapshots[-14:]])
+                
+                # Calcular TR (True Range)
+                high_low = highs - lows
+                high_close = np.abs(highs - np.roll(closes, 1))
+                low_close = np.abs(lows - np.roll(closes, 1))
+                tr = np.max(np.vstack([high_low, high_close, low_close]), axis=0)
+                atr = np.mean(tr[1:])  # Evitar primer valor NaN
+                
+                if atr <= 0:
+                    atr = 0.01  # Evitar división por cero
+            except Exception as e:
+                logger.debug(f"[REVERSAL] Error calculating ATR: {str(e)[:60]}")
+                return {
+                    'reversal_detected': False,
+                    'reversal_direction': None,
+                    'reversal_strength': 0.0,
+                    'candle_move_pct': 0.0,
+                    'atr_ratio': 0.0
+                }
+            
+            # ═══════════════════════════════════════════════════════════
+            # PASO 2: Analizar última vela (la más reciente)
+            # ═══════════════════════════════════════════════════════════
+            last_candle = snapshots[-1]
+            candle_open = float(last_candle.get('open', 0))
+            candle_close = float(last_candle.get('close', 0))
+            candle_high = float(last_candle.get('high', 0))
+            candle_low = float(last_candle.get('low', 0))
+            
+            # Tamaño del cuerpo de la vela
+            candle_body = abs(candle_close - candle_open)
+            candle_range = candle_high - candle_low
+            
+            # Movimiento porcentual desde open hasta close
+            if candle_open != 0:
+                candle_move_pct = ((candle_close - candle_open) / candle_open) * 100.0
+            else:
+                candle_move_pct = 0.0
+            
+            # Ratio: tamaño vela / ATR (cuántos ATRs mide la vela)
+            atr_ratio = candle_body / atr if atr > 0 else 0.0
+            
+            # ═══════════════════════════════════════════════════════════
+            # PASO 3: Detectar si es una vela EXTREMA
+            # ═══════════════════════════════════════════════════════════
+            extreme_threshold = 1.8  # Vela debe ser > 1.8x ATR para ser considerada EXTREMA
+            move_threshold = 0.25   # Movimiento debe ser > 0.25% para ser relevante
+            
+            if atr_ratio < extreme_threshold or abs(candle_move_pct) < move_threshold:
+                return {
+                    'reversal_detected': False,
+                    'reversal_direction': None,
+                    'reversal_strength': 0.0,
+                    'candle_move_pct': candle_move_pct,
+                    'atr_ratio': atr_ratio
+                }
+            
+            # ═══════════════════════════════════════════════════════════
+            # PASO 4: Determinar dirección de reversión (INVERSA a la vela)
+            # ═══════════════════════════════════════════════════════════
+            
+            # Si vela cerró al alza (BUY) → Esperamos reversión a la baja (SELL)
+            # Si vela cerró a la baja (SELL) → Esperamos reversión al alza (BUY)
+            if candle_close > candle_open:  # Vela UP
+                reversal_direction = 'SELL'
+                reversal_reason = f"Vela UP extrema ({candle_move_pct:+.3f}%, {atr_ratio:.2f}x ATR) → esperando reversión BAJA"
+            else:  # Vela DOWN
+                reversal_direction = 'BUY'
+                reversal_reason = f"Vela DOWN extrema ({candle_move_pct:+.3f}%, {atr_ratio:.2f}x ATR) → esperando reversión ALTA"
+            
+            # ═══════════════════════════════════════════════════════════
+            # PASO 5: Calcular CONFIANZA en la reversión
+            # ═══════════════════════════════════════════════════════════
+            
+            # Factores de confianza:
+            # 1. Tamaño relativo de la vela (mayor = más extrema = mayor reversión esperada)
+            size_confidence = min(100.0, (atr_ratio - extreme_threshold) / extreme_threshold * 100.0)
+            
+            # 2. Movimiento porcentual (mayor movimiento = más clara la dirección)
+            move_confidence = min(100.0, abs(candle_move_pct) / move_threshold * 100.0)
+            
+            # 3. Cuerpo vs sombras (si el cuerpo es > 70% del rango, es más fuerte)
+            body_ratio = (candle_body / candle_range) if candle_range > 0 else 0
+            body_confidence = min(100.0, body_ratio * 100.0) if body_ratio > 0.7 else 50.0
+            
+            # Confianza final (promedio ponderado)
+            reversal_strength = (size_confidence * 0.40 + move_confidence * 0.35 + body_confidence * 0.25)
+            reversal_strength = max(0.0, min(100.0, reversal_strength))
+            
+            self.add_log(f"[🔄 REVERSIÓN EXTREMA] {reversal_reason}", 'warning')
+            self.add_log(f"[📊 CONFIANZA] Size:{size_confidence:.0f}% + Move:{move_confidence:.0f}% + Body:{body_confidence:.0f}% = {reversal_strength:.0f}%", 'info')
+            
+            return {
+                'reversal_detected': True,
+                'reversal_direction': reversal_direction,
+                'reversal_strength': reversal_strength,
+                'candle_move_pct': candle_move_pct,
+                'atr_ratio': atr_ratio
+            }
+            
+        except Exception as e:
+            logger.error(f"[REVERSAL] Error analyzing extreme candle: {str(e)[:80]}")
+            return {
+                'reversal_detected': False,
+                'reversal_direction': None,
+                'reversal_strength': 0.0,
+                'candle_move_pct': 0.0,
+                'atr_ratio': 0.0
+            }
+
     def _apply_specialist_protections(self, buy_analysis, sell_analysis, snapshots=None, context='general'):
         """Aplica protecciones comunes de especialistas y retorna copias ajustadas."""
         try:
@@ -2732,6 +3238,27 @@ class MT5AdaptiveTradingBot:
                             return 'BUY', 50, 50, trend_analysis
                         buy_score = float(buy_res.get('score', buy_score))
                         sell_score = float(sell_res.get('score', sell_score))
+                    
+                    # ⭐ PASO NUEVO: DETECTAR VELAS EXTREMAS Y APLICAR REVERSIÓN AUTOMÁTICA
+                    # Si se detecta una vela extrema, invierte automáticamente los scores
+                    reversal_analysis = self._analyze_extreme_candle_reversal(snaps)
+                    reversal_detected = reversal_analysis.get('reversal_detected', False)
+                    reversal_strength = reversal_analysis.get('reversal_strength', 0.0)
+                    reversal_direction = reversal_analysis.get('reversal_direction')
+                    
+                    if reversal_detected and reversal_strength >= 60.0:
+                        # ⭐ APLICAR INVERSIÓN DE SCORES POR REVERSIÓN EXTREMA
+                        # Boost scores para la dirección de reversión, penaliza la opuesta
+                        if reversal_direction == 'BUY':
+                            boost_amount = min(25.0, reversal_strength * 0.30)
+                            buy_score += boost_amount
+                            sell_score = max(0.0, sell_score - boost_amount * 0.5)
+                            self.add_log(f"[🔄 BOOST-REVERSIÓN] Boosting BUY +{boost_amount:.1f} (reversión detectada con {reversal_strength:.0f}% confianza)", 'success')
+                        else:  # SELL
+                            boost_amount = min(25.0, reversal_strength * 0.30)
+                            sell_score += boost_amount
+                            buy_score = max(0.0, buy_score - boost_amount * 0.5)
+                            self.add_log(f"[🔄 BOOST-REVERSIÓN] Boosting SELL +{boost_amount:.1f} (reversión detectada con {reversal_strength:.0f}% confianza)", 'success')
                     
                     # ⭐ APLICAR AJUSTES DE SCORES - SOLO SI HAY UNA RAZÓN CLARA
                     # ANTES: Los ajustes por tendencia creaban sesgo systematic hacia BUY
@@ -2927,7 +3454,7 @@ class MT5AdaptiveTradingBot:
             except Exception:
                 pass
 
-            self.add_log(f"[🛡️] ⭐ MODO AGRESIVO: Abriendo con mejor score ({direction}) - Arbitrador IGNORADO", 'success')
+            self.add_log(f"[🛡️] ✅ Análisis recomendado: {direction} (score={buy_score:.1f} vs {sell_score:.1f}) - Se aplicarán validaciones antes de abrir", 'info')
             
             return direction, buy_score, sell_score, trend_analysis
         except Exception as e:
@@ -3774,12 +4301,16 @@ class MT5AdaptiveTradingBot:
             if symbol in symbol_configs:
                 config = symbol_configs[symbol]
                 
-                # Aplicar configuración a los widgets
+                # ⭐ NO SOBRESCRIBIR TP_DIFF y SL_DIFF si el usuario ya los configuró manualmente
+                # Solo aplicar configuración para otros parámetros (VOL, MICROTREND_THRESHOLD, etc.)
+                # Aplicar configuración a los widgets - EXCEPTO TP_DIFF y SL_DIFF
                 for key, value in config.items():
-                    if key in self.config:
-                        self.config[key].set(value)
+                    # ⭐ CRITICAL: NUNCA sobrescribir TP_DIFF y SL_DIFF - son configuración del usuario
+                    if key not in ('TP_DIFF', 'SL_DIFF', 'GLOBAL_TP', 'GLOBAL_SL'):
+                        if key in self.config:
+                            self.config[key].set(value)
                 
-                self.add_log(f"✅ Configuración para {symbol} cargada automáticamente", 'success')
+                self.add_log(f"✅ Configuración para {symbol} cargada automáticamente (TP/SL preservados)", 'success')
             else:
                 self.add_log(f"⚠️ Par '{symbol}' no reconocido", 'warning')
                 
@@ -3871,6 +4402,22 @@ class MT5AdaptiveTradingBot:
                                  lambda e: self._configure_symbol_parameters(self.config['SYMBOL'].get()))
                 self.config_entries[key] = symbol_combo
                 self.symbol_combo_widget = symbol_combo  # Guardar referencia para habilitar/deshabilitar
+            # ⭐ SPINBOX para GOLD_THRESHOLD (rango 16-20, step 0.1)
+            elif key == 'GOLD_THRESHOLD':
+                spinbox = tk.Spinbox(row_frame, from_=16.0, to=20.0, increment=0.1,
+                                    textvariable=self.config[key], bg='#475569', fg='#fbbf24',
+                                    relief='flat', font=('Arial', 9), insertbackground='white',
+                                    width=8, justify='center')
+                spinbox.pack(side='right', fill='x', expand=True)
+                self.config_entries[key] = spinbox
+            # ⭐ SPINBOX para SILVER_THRESHOLD (rango 1.3-1.8, step 0.1)
+            elif key == 'SILVER_THRESHOLD':
+                spinbox = tk.Spinbox(row_frame, from_=1.3, to=1.8, increment=0.1,
+                                    textvariable=self.config[key], bg='#475569', fg='#ec4899',
+                                    relief='flat', font=('Arial', 9), insertbackground='white',
+                                    width=8, justify='center')
+                spinbox.pack(side='right', fill='x', expand=True)
+                self.config_entries[key] = spinbox
             else:
                 entry = tk.Entry(row_frame, textvariable=self.config[key], bg='#475569', fg='white', relief='flat', font=('Arial', 9), insertbackground='white')
                 entry.pack(side='right', fill='x', expand=True)
@@ -5279,8 +5826,17 @@ class MT5AdaptiveTradingBot:
                 self.check_and_close_rapid_operations(symbol)
 
                 # Abrir nuevas operaciones cada X segundos (sin análisis, solo abre)
+                
+                # ⭐ CRÍTICO: Inicializar last_rapid_op_time si es negativo o 0
+                # Esto evita que se abra inmediatamente al iniciar
+                if self.last_rapid_op_time <= 0:
+                    self.last_rapid_op_time = current_time
+                    self.add_log(f"[CONTADOR] Inicializado contador rápidas: próxima apertura en {interval}s", 'info')
 
-                if current_time - self.last_rapid_op_time >= interval:
+                # Calcular tiempo transcurrido y verificar si puede abrir
+                time_since_last_op = current_time - self.last_rapid_op_time
+                
+                if time_since_last_op >= interval:
                     # Durante los primeros 30s, solo fantasmas
                     if self.rapid_ops_start_time and (current_time - self.rapid_ops_start_time <= 30):
                         self.add_log("[PAUSA] Solo operaciones fantasma (entrenamiento 30s)...", 'info')
@@ -5364,14 +5920,12 @@ class MT5AdaptiveTradingBot:
                             
                             should_force_open = is_aggressive_timeout or (getattr(self, 'aggressive_mode', False) and time_since_start >= 30)
                             
-                            if not validation_result['should_open'] and not should_force_open:
-                                self.add_log(f"[RAPID-VALID] ❌ Validación rechazó: {validation_result['reason']} | Risk: {validation_result['risk_level']}", 'warning')
+                            if not validation_result['should_open']:
+                                # ❌ VALIDACIÓN RECHAZÓ - NO ABRIR
+                                self.add_log(f"❌ [RAPID-VALID] Validación rechazó: {validation_result['reason']} | Risk: {validation_result['risk_level']}", 'warning')
                             else:
-                                # Abrir operación real (validación pasó O modo agresivo forzado)
-                                if not validation_result['should_open'] and should_force_open:
-                                    self.add_log(f"🤖 MODO AGRESIVO: Forzando apertura a pesar de validación ({time_since_start:.0f}s > {initial_phase}s)", 'success')
-                                else:
-                                    self.add_log(f"[RAPID-VALID] ✅ Validación aprobó (Risk: {validation_result['risk_level']}, {validation_result['passed_criteria']}/6 checks)", 'success')
+                                # ✅ VALIDACIÓN APROBÓ - ABRIR OPERACIÓN
+                                self.add_log(f"✅ [RAPID-VALID] Validación aprobó (Risk: {validation_result['risk_level']}, {validation_result['passed_criteria']}/6 checks)", 'success')
                                 
                                 # Abrir operación real
                                 if ghost_dir in ('BUY', 'SELL'):
@@ -5554,33 +6108,20 @@ class MT5AdaptiveTradingBot:
 
             volume = self.config['VOL'].get()
 
-            # ⭐⭐⭐ VALIDACIÓN BREAKOUT + CONFIRMACIÓN ANTES DE ABRIR ⭐⭐⭐
-            # Para operaciones rápidas después de 1m en modo agresivo: SKIPEAR validación estricta
-            skip_entry_validation = False
-            if self.rapid_ops_start_time:
-                time_elapsed = time.time() - self.rapid_ops_start_time
-                initial_phase = int(self.config.get('RAPID_OPS_INITIAL_PHASE', tk.IntVar(value=60)).get()) if 'RAPID_OPS_INITIAL_PHASE' in self.config else 60
-                if time_elapsed >= initial_phase:
-                    skip_entry_validation = True  # ⭐ Modo agresivo: SIEMPRE abre sin validación estricta
-                    self.add_log(f"⭐ OPERACIÓN RÁPIDA AGRESIVA ({time_elapsed:.0f}s >= {initial_phase}s): Saltando validación estricta", 'info')
-            
-            # Ejecutar los 4 filtros de entrada SIEMPRE EXCEPTO en modo agresivo rápido
+            # ⭐⭐⭐ VALIDACIÓN OBLIGATORIA ANTES DE ABRIR ⭐⭐⭐
+            # Validar SIEMPRE - sin excepciones por tiempo
             direction_str = 'BUY' if direction == mt5.ORDER_TYPE_BUY else 'SELL'
             
-            if not skip_entry_validation:
-                is_valid, failed_filters, validation_reasons = self._validate_trade_entry(symbol, direction_str)
-                
-                if not is_valid:
-                    # ❌ FILTROS RECHAZARON LA ENTRADA
-                    self.add_log(f"❌ [{direction_str}] Entrada rechazada por filtros: {failed_filters}", 'warning')
-                    self.add_log(f"   Detalles: {validation_reasons}", 'info')
-                    return  # NO ABRIR - salir de la función
-                else:
-                    # ✅ TODOS LOS FILTROS PASARON - PERMITIR ENTRADA
-                    self.add_log(f"✅ [{direction_str}] Entrada validada por todos los filtros", 'success')
+            is_valid, failed_filters, validation_reasons = self._validate_trade_entry(symbol, direction_str)
+            
+            if not is_valid:
+                # ❌ FILTROS RECHAZARON LA ENTRADA - NO ABRIR
+                self.add_log(f"❌ [{direction_str}] Entrada rechazada: {failed_filters}", 'warning')
+                self.add_log(f"   Razón: {validation_reasons}", 'info')
+                return  # NO ABRIR - salir de la función
             else:
-                # ✅ MODO AGRESIVO: FORZAR APERTURA SIN VALIDACIÓN
-                self.add_log(f"✅ [{direction_str}] MODO AGRESIVO: Abriendo sin validación estricta", 'success')
+                # ✅ TODOS LOS FILTROS PASARON - PERMITIR ENTRADA
+                self.add_log(f"✅ [{direction_str}] Entrada validada - Abriendo operación", 'success')
 
             # Calcular SL y TP si están habilitados
             request = {
@@ -5610,9 +6151,8 @@ class MT5AdaptiveTradingBot:
                                 'open_time': datetime.now(),
                                 'ticket': result.order
                             }
-                            # ⭐ PAUSAR CONTADOR cuando se abre la primera operación
-                            if len(self.rapid_ops_active) == 1:
-                                self.last_rapid_op_time = -1  # Marca para pausar el countdown
+                            # ⭐ NO PAUSAR - dejar que el contador continúe para siguiente operación
+                            # El contador se actualiza al final del ciclo monitor_rapid_operations
                     else:
                         self.rapid_ops_active[result.order] = {
                             'type': order_type,
@@ -5620,9 +6160,8 @@ class MT5AdaptiveTradingBot:
                             'open_time': datetime.now(),
                             'ticket': result.order
                         }
-                        # ⭐ PAUSAR CONTADOR cuando se abre la primera operación
-                        if len(self.rapid_ops_active) == 1:
-                            self.last_rapid_op_time = -1  # Marca para pausar el countdown
+                        # ⭐ NO PAUSAR - dejar que el contador continúe para siguiente operación
+                        # El contador se actualiza al final del ciclo monitor_rapid_operations
                 except Exception:
                     pass
                 self.add_log(f"[OK] Op.Rápida {order_type} @ {entry_price:.5f}", 'success')
@@ -5945,20 +6484,28 @@ class MT5AdaptiveTradingBot:
                 # BOT ESTÁ CORRIENDO Y SIN OPERACIONES: calcular countdown normal
                 countdown = "-"
                 
-                # Calcular tiempo hasta próxima apertura forzada
-                # Usar last_rapid_op_time + intervalo configurado
+                # ⭐ USAR EL MISMO INTERVALO QUE EL MONITOR RÁPIDAS
+                try:
+                    configured_interval = self.config['RAPID_OPS_INTERVAL'].get()
+                except:
+                    configured_interval = 30  # Default
+                
                 now = time.time()
-                forced_interval = self._forced_open_interval_seconds()  # Obtener intervalo en segundos
                 
                 if hasattr(self, 'last_rapid_op_time') and self.last_rapid_op_time > 0:
                     # Calcular cuándo fue la última operación
                     time_since_last = now - self.last_rapid_op_time
                     # Cuántos segundos faltan para la próxima
-                    secs_remaining = max(0, forced_interval - time_since_last)
-                    countdown = f"{int(secs_remaining)}s"
+                    secs_remaining = max(0, configured_interval - time_since_last)
+                    
+                    # Si el tiempo restante es 0 o muy pequeño, mostrar "LISTO" o esperar
+                    if secs_remaining <= 0:
+                        countdown = "🚀"  # Listo para abrir
+                    else:
+                        countdown = f"{int(secs_remaining)}s"
                 else:
                     # Si no hay registro de última operación, mostrar intervalo completo
-                    countdown = f"{int(forced_interval)}s"
+                    countdown = f"{int(configured_interval)}s"
 
             # Actualizar la etiqueta de cuenta atrás del header
             if hasattr(self, 'rapid_countdown_label'):
@@ -8551,6 +9098,32 @@ class MT5AdaptiveTradingBot:
             return False
         elif not can_open_10velas and force:
             self.add_log(f"[ABRIR] ⚠️ Análisis 10-velas rechazó ({analysis_10.get('reason', '')}), pero force=True permite continuar", 'warning')
+
+        # ⭐⭐⭐ VALIDACIÓN CRÍTICA #1: ANÁLISIS BIDIRECCIONAL INTELIGENTE DE ÚLTIMAS 4 VELAS
+        # Este análisis DETERMINA la dirección correcta (BUY o SELL) o BLOQUEA si ambas son débiles
+        snapshots_for_4analysis = self.get_fresh_market_data(symbol, bars=20) or []
+        analysis_final_4 = self._analyze_final_4_candles_specialized(symbol, snapshots_for_4analysis)
+        
+        recommended_direction = analysis_final_4.get('recommended_direction', 'BLOCK')
+        analysis_confidence = analysis_final_4.get('confidence', 0.0)
+        analysis_reason = analysis_final_4.get('reason', '')
+        
+        self.add_log(
+            f"[ANÁLISIS-4VELAS-RECOMENDACIÓN] {recommended_direction} ({analysis_confidence:.0f}% confianza) | {analysis_reason}",
+            'success' if recommended_direction != 'BLOCK' else 'warning'
+        )
+        
+        # ⭐ Si el análisis de 4 velas bloquea, no abrir
+        if recommended_direction == 'BLOCK' and not force:
+            self.add_log(f"[ABRIR] ❌ BLOQUEADO por análisis BIDIRECCIONAL 4-velas: {analysis_reason}", 'warning')
+            return False
+        elif recommended_direction == 'BLOCK' and force:
+            self.add_log(f"[ABRIR] ⚠️ Análisis 4-velas bloqueó ({analysis_reason}), pero force=True permite continuar", 'warning')
+        else:
+            # ⭐ ACTUALIZAR dirección sugerida con la recomendación del análisis inteligente
+            # Si el análisis dice que SELL es mejor, cambiar a SELL aunque inicialmente fuera BUY
+            direccion_sugerida = recommended_direction
+            self.add_log(f"[ABRIR] ✅ Dirección corregida por análisis 4-velas: {direccion_sugerida} (confianza: {analysis_confidence:.0f}%)", 'info')
 
         # Si la microtendencia es contraria a la dirección sugerida, solo abrir si el score es MUY superior
         # (esto se aplica tanto en modo normal como forzado)
@@ -11458,6 +12031,29 @@ class MT5AdaptiveTradingBot:
                         pass
                 if sell_score is None:
                     sell_score = self.last_sell_score if hasattr(self, 'last_sell_score') else 50
+                
+                # ⭐ NUEVO: ANÁLISIS DE REVERSIÓN EXTREMA EN MONITOR TIEMPO REAL
+                # Detectar velas extremas y aplicar boost a dirección de reversión
+                try:
+                    reversal_analysis = self._analyze_extreme_candle_reversal(market_snaps)
+                    if reversal_analysis.get('reversal_detected', False):
+                        reversal_strength = reversal_analysis.get('reversal_strength', 0.0)
+                        reversal_direction = reversal_analysis.get('reversal_direction')
+                        
+                        if reversal_strength >= 60.0:
+                            # Aplicar boost a la dirección de reversión
+                            if reversal_direction == 'BUY':
+                                boost = min(20.0, reversal_strength * 0.25)
+                                buy_score = min(100.0, buy_score + boost)
+                                sell_score = max(0.0, sell_score - boost * 0.3)
+                                logger.debug(f"[MONITOR-REVERSAL] Reversal BUY detected: +{boost:.1f} boost")
+                            else:  # SELL
+                                boost = min(20.0, reversal_strength * 0.25)
+                                sell_score = min(100.0, sell_score + boost)
+                                buy_score = max(0.0, buy_score - boost * 0.3)
+                                logger.debug(f"[MONITOR-REVERSAL] Reversal SELL detected: +{boost:.1f} boost")
+                except Exception as e:
+                    logger.debug(f"[MONITOR-REVERSAL] Error: {str(e)[:60]}")
                 
                 # ⭐ FIX: NO aplicar sesgos por tendencia - los especialistas YA incluyen análisis de tendencia
                 # Aplicar sesgos crearía distorsión sistemática (problema anterior)
@@ -15713,5 +16309,7 @@ if __name__ == "__main__":
             print(f"\n❌ Error al iniciar la aplicación: {type(e).__name__}: {e}")
             import traceback
             traceback.print_exc()
+            sys.stderr.flush()
         except:
             pass
+        sys.exit(1)

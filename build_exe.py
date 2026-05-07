@@ -106,6 +106,18 @@ def collect_hidden_imports():
         'recovery_potential_enhanced',
         'spread_slippage_analyzer',
         'time_based_session_filter',
+        'correlation_analyzer',
+        'trade_logger',
+        'auto_calibration',
+        'dynamic_position_closer',
+        'trend_change_detector',
+        'multi_timeframe_analyzer',
+        'indicator_base',
+        'temporal_weighting',
+        'outlier_filter',
+        'candle_validator',
+        'market_snapshot_generator',
+        'safety_filters_manager',
     ]
     
     hidden = []
@@ -276,48 +288,31 @@ def main():
         sys.exit(1)
     
     # Paso 3: Recopilar imports y datos
-    print('\n[PASO 4/5] Recopilando configuración de compilación...')
+    print('\n[PASO 4/5] Verificando spec file...')
     
-    hidden_imports = collect_hidden_imports()
-    print(f'  ✓ Hidden imports: {len(hidden_imports)} módulos')
+    spec_file = os.path.join(ROOT, 'boteddver1.spec')
+    if not os.path.exists(spec_file):
+        print(f'  ✗ ERROR: {spec_file} no encontrado')
+        sys.exit(1)
     
-    data_files = collect_data_files()
-    print(f'  ✓ Archivos de datos: {len(data_files)} elemento(s)')
+    print(f'  ✓ Spec file encontrado: {os.path.basename(spec_file)}')
     
-    # Paso 4: Construir comando PyInstaller
-    print('\n[PASO 5/5] Construyendo comando PyInstaller...')
+    # Paso 4: Construir comando PyInstaller usando spec file
+    print('\n[PASO 5/5] Construyendo con spec file...')
     
     cmd = [
         sys.executable, '-m', 'PyInstaller',
         '--noconfirm',
-        '--onefile',
-        '--name', 'boteddver1',
-        # Opciones robustas para evitar problemas de embedded pkg archive
-        '--bootloader-ignore-signals',
-        '--disable-windowed-traceback',
+        spec_file,  # ⭐ USAR SPEC FILE DIRECTAMENTE (más eficiente)
     ]
     
-    # Opción console/windowed
-    if console:
-        cmd.append('--console')
-        print('  → Con ventana de consola')
-    else:
-        cmd.append('--windowed')
-        print('  → Sin ventana de consola')
-    
-    # Agregar hidden imports
-    for hi in hidden_imports:
-        cmd += ['--hidden-import', hi]
-    
-    # Agregar archivos de datos
-    for data_src, data_dest in data_files:
-        # Formato Windows: src;dest
-        cmd += ['--add-data', f'{data_src};{data_dest}']
+    print('  → Usando spec file (evita análisis innecesario de módulos)')
+    print('  → Usando spec file (evita análisis innecesario de módulos)')
+    print('  → Con ventana de consola y traceback habilitado')
     
     # Agregar icono si existe
     icon_path = os.path.join(ROOT, 'icon.ico')
     if os.path.exists(icon_path):
-        cmd += ['--icon', icon_path]
         print(f'  ✓ Icono incluido: icon.ico')
     
     # Incluir archivos de MetaTrader5
