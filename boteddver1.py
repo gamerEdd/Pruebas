@@ -410,13 +410,13 @@ class MT5AdaptiveTradingBot:
             if not symbol or symbol.strip() == '':
                 symbol = 'GOLD'
             
-            # Obtener threshold en decimal - USA THRESHOLD POR PAR (GOLD o SILVER)
+            # Obtener threshold en decimal - USA THRESHOLD POR PAR (GOLD o XAUEUR)
             if threshold is None:
                 # ⭐ USAR THRESHOLD ESPECÍFICO DEL PAR
                 if symbol.upper() == 'GOLD' or symbol == 'XAUUSD':
                     pips_value = self._safe_get('GOLD_THRESHOLD', 18.0)
-                elif symbol.upper() == 'SILVER' or symbol == 'XAGUSD':
-                    pips_value = self._safe_get('SILVER_THRESHOLD', 15.0)
+                elif symbol.upper() == 'XAUEUR' or symbol == 'XAUEUR':
+                    pips_value = self._safe_get('XAUEUR_THRESHOLD', 15.0)
                 else:
                     pips_value = self._safe_get('MICROTREND_THRESHOLD', 18.0)  # Default fallback
                 
@@ -593,11 +593,11 @@ class MT5AdaptiveTradingBot:
                     candle_body_pct = 60
                     candle_wick_pct = 40
                     candle_close_pct = 70
-            else:  # SILVER
+            else:  # XAUEUR
                 try:
-                    threshold_pips = float(self.config.get('SILVER_THRESHOLD', tk.DoubleVar(value=15)).get())
-                    candle_body_pct = int(self.config.get('SILVER_CANDLE_BODY_PCT', tk.IntVar(value=60)).get())
-                    candle_wick_pct = 40  # SILVER usa valores similares
+                    threshold_pips = float(self.config.get('XAUEUR_THRESHOLD', tk.DoubleVar(value=15)).get())
+                    candle_body_pct = int(self.config.get('XAUEUR_CANDLE_BODY_PCT', tk.IntVar(value=60)).get())
+                    candle_wick_pct = 40  # XAUEUR usa valores similares
                     candle_close_pct = 70
                 except:
                     threshold_pips = 15
@@ -971,7 +971,7 @@ class MT5AdaptiveTradingBot:
             if 'GOLD' in symbol.upper():
                 min_candles_required = 6  # GOLD: más exigente (menos ruidoso)
             else:
-                min_candles_required = 5  # SILVER: más flexible (más ruidoso)
+                min_candles_required = 5  # XAUEUR: más flexible (más ruidoso)
 
             # Debe haber mayoría clara de la dirección esperada
             if direction == 'BUY':
@@ -1205,37 +1205,105 @@ class MT5AdaptiveTradingBot:
 
     def _monitor_reversals_aggressive(self):
         """
-        ⭐ MONITOR DE REVERSIÓN AGRESIVO: Corre cada 2 segundos
-        Si detecta que la dirección cambió (BUY→SELL o SELL→BUY),
-        CIERRA la posición anterior y ABRE inmediatamente en la nueva dirección
+        ⭐ MONITOR DE REVERSIÓN INTELIGENTE: Análisis COMPLETO antes de abrir
+        
+        Cambios respecto a versión anterior:
+        1. Cooldown de 30 segundos entre aperturas (evita ruido)
+        2. Análisis COMPLETO (threshold, validación, calidad de vela)
+        3. Requiere CONFIRMACIÓN de cambio de dirección (2 ciclos = 4 seg)
+        4. Verifica que no haya posición abierta en el mismo símbolo
         """
         last_microtrend = None
+        confirmaciones = {}  # {symbol: {'direccion': dir, 'count': n}}
+        last_open_time_by_symbol = {}  # {symbol: timestamp} - Cooldown entre aperturas
+        MIN_COOLDOWN = 30  # 30 segundos mínimo entre aperturas en el mismo símbolo
+        CONFIRMATIONS_REQUIRED = 2  # 2 ciclos de confirmación (4 segundos)
         
         while getattr(self, '_scheduler_running', True):
             try:
-                time.sleep(2)  # ⭐ Corre cada 2 segundos (ultra-rápido)
+                time.sleep(2)  # Corre cada 2 segundos
                 
                 # Saltarse si bot pausado
                 if self.bot_pausado:
                     continue
                 
                 symbol = self._get_symbol()
+                current_time = time.time()
                 
-                # Get actual microtrend (detecta tendencias REALES: Usa el threshold de configuración)
+                # ⭐ VALIDAR: No abrir si hay cooldown activo
+                if symbol in last_open_time_by_symbol:
+                    tiempo_desde_apertura = current_time - last_open_time_by_symbol[symbol]
+                    if tiempo_desde_apertura < MIN_COOLDOWN:
+                        # Cooldown activo - no hacer nada
+                        continue
+                
+                # Get actual microtrend
                 current_microtrend = self._microtrend_direction(symbol, bars=10, threshold=None)
                 
-                # ⭐ DETECCIÓN DE REVERSIÓN
+                # ⭐ FASE 1: DETECCIÓN DE CAMBIO
                 if last_microtrend and current_microtrend != last_microtrend:
                     if current_microtrend in ('BUY', 'SELL') and last_microtrend in ('BUY', 'SELL'):
-                        self.add_log(f"\n[⚡ REVERSIÓN DETECTADA] {last_microtrend} → {current_microtrend}", 'warning')
+                        # Nuevo cambio detectado - iniciar confirmaciones
+                        confirmaciones[symbol] = {'direccion': current_microtrend, 'count': 1}
+                        self.add_log(f"[⚡ REVERSIÓN-NIVEL1] {last_microtrend} → {current_microtrend} (confirmación 1/{CONFIRMATIONS_REQUIRED})", 'warning')
+                
+                # ⭐ FASE 2: CONTAR CONFIRMACIONES
+                elif symbol in confirmaciones:
+                    if confirmaciones[symbol]['direccion'] == current_microtrend:
+                        confirmaciones[symbol]['count'] += 1
+                        self.add_log(f"[⚡ REVERSIÓN-NIVEL2] {current_microtrend} confirmado ({confirmaciones[symbol]['count']}/{CONFIRMATIONS_REQUIRED})", 'info')
                         
-                        # ⭐ ACCIÓN RÁPIDA: Abre operación en la NUEVA dirección
-                        try:
-                            self.add_log(f"[REVERSIÓN] 🚀 Abriendo {current_microtrend} por cambio de micro-momentum", 'warning')
-                            self.abrir_operacion_smart(current_microtrend, force=True, startup=False)
-                            self.add_log(f"[✅ REVERSIÓN-EJECUTADA] Operación {current_microtrend} abierta al instante", 'success')
-                        except Exception as e:
-                            self.add_log(f"[❌ REVERSIÓN-FALLO] {str(e)[:40]}", 'error')
+                        # ⭐ FASE 3: SUFICIENTES CONFIRMACIONES - ANÁLISIS COMPLETO ANTES DE ABRIR
+                        if confirmaciones[symbol]['count'] >= CONFIRMATIONS_REQUIRED:
+                            new_direction = confirmaciones[symbol]['direccion']
+                            
+                            # ⭐ ANÁLISIS COMPLETO (no confiar solo en microtrend)
+                            self.add_log(f"\n[🔍 ANÁLISIS PROFUNDO] Verificando {new_direction}...", 'info')
+                            
+                            # Hacer análisis completo como si fuera una entrada fría
+                            analysis_direction, buy_score, sell_score, analysis_data = self._quick_analysis_for_forced_reopen(symbol)
+                            
+                            # ⭐ VALIDACIONES CRÍTICAS
+                            validations_passed = True
+                            validation_reasons = []
+                            
+                            # 1. Verificar que el análisis completo concuerde con la reversión
+                            if analysis_direction != new_direction:
+                                validations_passed = False
+                                validation_reasons.append(f"Dirección diverge: microtrend={new_direction}, análisis={analysis_direction}")
+                            
+                            # 2. Verificar confianza mínima
+                            score = buy_score if new_direction == 'BUY' else sell_score
+                            if score < 2.0:
+                                validations_passed = False
+                                validation_reasons.append(f"Confianza baja: {score:.1f} (min: 2.0)")
+                            
+                            # 3. Verificar que no haya posición abierta (evita apilar operaciones)
+                            positions = mt5.positions_get(symbol=symbol) or []
+                            if positions:
+                                validations_passed = False
+                                validation_reasons.append(f"Ya hay {len(positions)} posición(es) abierta(s)")
+                            
+                            # ⭐ DECISIÓN FINAL
+                            if validations_passed:
+                                self.add_log(f"[✅ VALIDACIONES OK] Análisis={analysis_direction}, BUY={buy_score:.1f}, SELL={sell_score:.1f}", 'success')
+                                self.add_log(f"[🚀 ABRIENDO] {new_direction} con confianza {score:.1f}", 'success')
+                                
+                                try:
+                                    self.abrir_operacion_smart(new_direction, force=True, startup=False)
+                                    last_open_time_by_symbol[symbol] = current_time
+                                    self.add_log(f"[✅ OPERACIÓN EJECUTADA] {new_direction}", 'success')
+                                except Exception as e:
+                                    self.add_log(f"[❌ ERROR APERTURA] {str(e)[:40]}", 'error')
+                            else:
+                                self.add_log(f"[❌ VALIDACIÓN FALLIDA] {' | '.join(validation_reasons)}", 'warning')
+                            
+                            # Limpiar confirmaciones
+                            confirmaciones.pop(symbol, None)
+                    else:
+                        # Dirección cambió de nuevo - reiniciar confirmaciones
+                        confirmaciones[symbol] = {'direccion': current_microtrend, 'count': 1}
+                        self.add_log(f"[⚡ REVERSIÓN-REINICIO] Cambio a {current_microtrend}", 'info')
                 
                 # Actualizar último estado
                 if current_microtrend in ('BUY', 'SELL'):
@@ -1544,7 +1612,7 @@ class MT5AdaptiveTradingBot:
             'TREND_TP_MULTIPLIER': tk.DoubleVar(value=1.0),
             'FORCE_STOP_LOSS': tk.DoubleVar(value=100.0),
             'USE_SL': tk.BooleanVar(value=True),  # ⭐ NUEVO: Opción de usar SL
-            'USE_MULTIPLE_PARTS': tk.BooleanVar(value=False),  # ⭐ NUEVO: Si activado, abre 1 en GOLD + 1 en SILVER simultáneamente
+            'USE_MULTIPLE_PARTS': tk.BooleanVar(value=False),  # ⭐ NUEVO: Si activado, abre 1 en GOLD + 1 en XAUEUR simultáneamente
             
             # Configuración de indicadores
             'ATR_PERIOD': tk.IntVar(value=14),
@@ -1583,7 +1651,7 @@ class MT5AdaptiveTradingBot:
             # ⭐️ Take Profit y Stop Loss Global configurables
             'GLOBAL_TP': tk.DoubleVar(value=1.0),  # Ganancia total para cerrar todo en GOLD
             'GLOBAL_SL': tk.DoubleVar(value=30),  # ⭐ Stop Loss Global para GOLD: $30 por defecto
-            'MICROTREND_THRESHOLD': tk.DoubleVar(value=18.0),  # ⭐ OPTIMIZADO para GOLD: 18 pips (SILVER: 15)
+            'MICROTREND_THRESHOLD': tk.DoubleVar(value=18.0),  # ⭐ OPTIMIZADO para GOLD: 18 pips (XAUEUR: 15)
             'MIN_PROB_ENTRADA': tk.DoubleVar(value=73.0),
             'PAUSA_POST_WIN': tk.IntVar(value=0),  # <-- cooldown tras ganar una operación (segundos)
             'CONFIDENCE_THRESHOLD': tk.DoubleVar(value=70.0),  # umbral general árbitro
@@ -1629,8 +1697,8 @@ class MT5AdaptiveTradingBot:
         self.reload_count = 0
         self.scheduler_reload_time = None
         
-        # Inicializar para GOLD y SILVER
-        for symbol in ['GOLD', 'SILVER']:
+        # Inicializar para GOLD y XAUEUR
+        for symbol in ['GOLD', 'XAUEUR']:
             self.market_snapshots_by_symbol[symbol] = []
             self.market_snapshots_backup_by_symbol[symbol] = []
             self.market_snapshots_lock_by_symbol[symbol] = threading.Lock()
@@ -1644,7 +1712,7 @@ class MT5AdaptiveTradingBot:
         self.MAX_SNAPSHOTS = 1440  # 24h en M1, limpia automáticamente
         
         # Cargar snapshots independientes por par
-        for symbol in ['GOLD', 'SILVER']:
+        for symbol in ['GOLD', 'XAUEUR']:
             try:
                 self.market_snapshots_by_symbol[symbol] = self.reload_market_snapshots(symbol=symbol)
             except Exception:
@@ -1715,13 +1783,21 @@ class MT5AdaptiveTradingBot:
         #    ✅ ENTRA: Si TODAS las 6 validaciones pasan
         #    ❌ RECHAZA: Si CUALQUIERA falla
         
-        # ⭐ CONFIG ÓPTIMA PARA SILVER (Scalping M1/M5 más rápido)
-        self.config['SILVER_THRESHOLD'] = tk.DoubleVar(value=15)  # ⭐ EN PIPS (como MICROTREND_THRESHOLD): 15 para PLATA, se convierte a 0.15 decimal
-        self.config['SILVER_MICROTREND_CANDLES'] = tk.IntVar(value=4)  # Rango 3-5 (igual que ORO)
-        self.config['SILVER_CANDLE_BODY_PCT'] = tk.IntVar(value=60)  # Mínimo 60% de cuerpo (MÁS CRÍTICO en plata)
-        self.config['SILVER_VIDYA_CMO'] = tk.IntVar(value=9)  # CMO para VIDYA (igual)
-        self.config['SILVER_VIDYA_EMA'] = tk.IntVar(value=12)  # EMA para VIDYA (igual)
-        self.config['SILVER_IMPULSE_FILTER'] = tk.DoubleVar(value=1.5)  # Movimiento mínimo en puntos (igual)
+        # ⭐ CONFIG ÓPTIMA PARA XAUEUR (Oro contra Euro - Menos volátil, MÁS RUIDO)
+        # 🎯 PARÁMETROS ANTI-RUIDO PARA SCALPING EN XAUEUR:
+        # Threshold más alto (22 vs 18 GOLD) → menos falsos rompimientos
+        # Microtendencia más larga (5 vs 4 GOLD) → requiere continuidad clara
+        # Cuerpo más estricto (65% vs 60% GOLD) → filtra dojis y mechas largas
+        # VIDYA más lento (CMO:13, EMA:16) → ignora micro-ruido
+        # Impulso más fuerte (2.5 vs 1.5 GOLD) → solo movimientos reales
+        self.config['XAUEUR_THRESHOLD'] = tk.DoubleVar(value=22)  # 🎯 Ideal: 22 pips (rango 20-24) - Evita falsos rompimientos
+        self.config['XAUEUR_MICROTREND_CANDLES'] = tk.IntVar(value=5)  # 5 velas (rango 4-6) - Requiere continuidad clara
+        self.config['XAUEUR_CANDLE_BODY_PCT'] = tk.IntVar(value=65)  # 65% mínimo (vs 60% GOLD) - Elimina dojis
+        self.config['XAUEUR_CANDLE_WICK_PCT'] = tk.IntVar(value=35)  # 35% máximo (vs 40% GOLD) - Rechaza mechas largas
+        self.config['XAUEUR_CANDLE_CLOSE_PCT'] = tk.IntVar(value=70)  # Cierre fuerte en dirección
+        self.config['XAUEUR_VIDYA_CMO'] = tk.IntVar(value=13)  # CMO: 13 (rango 12-14) - Más lento que GOLD
+        self.config['XAUEUR_VIDYA_EMA'] = tk.IntVar(value=16)  # EMA: 16 (rango 14-18) - Filtra micro-ruido
+        self.config['XAUEUR_IMPULSE_FILTER'] = tk.DoubleVar(value=2.5)  # 2.5 puntos (rango 2.0-3.0) - Solo movimientos reales
         
         # ⭐ AHORA inicializar MultiTimeframeAnalyzer (después de que self.config existe)
         try:
@@ -1751,21 +1827,21 @@ class MT5AdaptiveTradingBot:
             self.market_snapshots_lock = None
         
         # ⭐ NUEVO: Sistema de Reanalisis Post-Cierre por símbolo
-        self.post_close_reanalysis_active_by_symbol = {'GOLD': False, 'SILVER': False}
-        self.post_close_reanalysis_until_by_symbol = {'GOLD': 0.0, 'SILVER': 0.0}
-        self.post_close_reanalysis_thread_by_symbol = {'GOLD': None, 'SILVER': None}
-        self.post_close_reanalysis_last_scores_by_symbol = {'GOLD': {'buy': 0, 'sell': 0}, 'SILVER': {'buy': 0, 'sell': 0}}
+        self.post_close_reanalysis_active_by_symbol = {'GOLD': False, 'XAUEUR': False}
+        self.post_close_reanalysis_until_by_symbol = {'GOLD': 0.0, 'XAUEUR': 0.0}
+        self.post_close_reanalysis_thread_by_symbol = {'GOLD': None, 'XAUEUR': None}
+        self.post_close_reanalysis_last_scores_by_symbol = {'GOLD': {'buy': 0, 'sell': 0}, 'XAUEUR': {'buy': 0, 'sell': 0}}
         
         # ⭐ FLAGS DE SINCRONIZACIÓN por símbolo
         self.trend_analysis_lock = threading.Lock()  # ⭐ Global lock para compatibilidad
-        self.trend_analysis_lock_by_symbol = {'GOLD': threading.Lock(), 'SILVER': threading.Lock()}
+        self.trend_analysis_lock_by_symbol = {'GOLD': threading.Lock(), 'XAUEUR': threading.Lock()}
         self.trend_imminent_reversal = False  # ⭐ Global flag para compatibilidad
-        self.trend_imminent_reversal_by_symbol = {'GOLD': False, 'SILVER': False}
+        self.trend_imminent_reversal_by_symbol = {'GOLD': False, 'XAUEUR': False}
         self.trend_imminent_direction = None  # ⭐ Global para compatibilidad
-        self.trend_imminent_direction_by_symbol = {'GOLD': None, 'SILVER': None}
+        self.trend_imminent_direction_by_symbol = {'GOLD': None, 'XAUEUR': None}
         self.trend_imminent_confidence = 0.0  # ⭐ Global para compatibilidad
-        self.trend_imminent_confidence_by_symbol = {'GOLD': 0.0, 'SILVER': 0.0}
-        self.trend_analysis_ready_by_symbol = {'GOLD': True, 'SILVER': True}
+        self.trend_imminent_confidence_by_symbol = {'GOLD': 0.0, 'XAUEUR': 0.0}
+        self.trend_analysis_ready_by_symbol = {'GOLD': True, 'XAUEUR': True}
         
         # ⭐ Monitor de actualización de datos
         self.last_data_stats_log = 0
@@ -2673,7 +2749,7 @@ class MT5AdaptiveTradingBot:
             current_symbol = self.config.get('SYMBOL', tk.StringVar(value='GOLD')).get() if hasattr(self, 'config') else 'GOLD'
             
             # Recargar ambos pares SIMULTÁNEAMENTE
-            for symbol in ['GOLD', 'SILVER']:
+            for symbol in ['GOLD', 'XAUEUR']:
                 try:
                     updated_snaps = self.reload_market_snapshots(symbol=symbol)
                     logger.debug(f"[SYNC-{symbol}] Reloaded: {len(updated_snaps)} snapshots")
@@ -2715,11 +2791,11 @@ class MT5AdaptiveTradingBot:
             return []
 
     def reload_all_symbols_snapshots(self):
-        """⭐ NUEVO: Recarga snapshots para GOLD Y SILVER independientemente.
+        """⭐ NUEVO: Recarga snapshots para GOLD Y XAUEUR independientemente.
         Esto garantiza que ambos símbolos tengan datos frescos en paralelo.
         """
         try:
-            for symbol in ['GOLD', 'SILVER']:
+            for symbol in ['GOLD', 'XAUEUR']:
                 try:
                     fresh_snaps = self.reload_market_snapshots(symbol=symbol)
                     if fresh_snaps and isinstance(fresh_snaps, list):
@@ -3184,7 +3260,7 @@ class MT5AdaptiveTradingBot:
         Retorna: (mejor_dirección, score_buy, score_sell, trend_analysis)"""
         # --- FILTRO DE MICROTENDENCIA/MOMENTUM - USA THRESHOLD DEL PAR EN TIEMPO REAL ---
         try:
-            microtrend = self._microtrend_direction(symbol, bars=10, threshold=None)  # ⭐ USA GOLD_THRESHOLD o SILVER_THRESHOLD DE CONFIG (PARAMETRIZABLE EN TIEMPO REAL)
+            microtrend = self._microtrend_direction(symbol, bars=10, threshold=None)  # ⭐ USA GOLD_THRESHOLD o XAUEUR_THRESHOLD DE CONFIG (PARAMETRIZABLE EN TIEMPO REAL)
         except Exception as e:
             self.add_log(f"[ERROR] microtrend_direction fallo: {e}", 'error')
             microtrend = 'FLAT'
@@ -3192,8 +3268,8 @@ class MT5AdaptiveTradingBot:
         # Obtener threshold correcto del par
         if symbol.upper() == 'GOLD' or symbol == 'XAUUSD':
             threshold_pips = self._safe_get('GOLD_THRESHOLD', 18.0)
-        elif symbol.upper() == 'SILVER' or symbol == 'XAGUSD':
-            threshold_pips = self._safe_get('SILVER_THRESHOLD', 15.0)
+        elif symbol.upper() == 'XAUEUR' or symbol == 'XAUEUR':
+            threshold_pips = self._safe_get('XAUEUR_THRESHOLD', 15.0)
         else:
             threshold_pips = self._safe_get('MICROTREND_THRESHOLD', 18.0)
         
@@ -4260,7 +4336,7 @@ class MT5AdaptiveTradingBot:
                 if hasattr(self, 'symbol_combo_widget'):
                     self.symbol_combo_widget.config(state='disabled')
                     self.symbol_combo_widget.set('')
-                self.add_log("⚡ MÚLTIPLES PARTES activado: Usando GOLD + SILVER simultáneamente (selector deshabilitado)", 'info')
+                self.add_log("⚡ MÚLTIPLES PARTES activado: Usando GOLD + XAUEUR simultáneamente (selector deshabilitado)", 'info')
             else:
                 # Desactivado: habilitar combobox
                 if hasattr(self, 'symbol_combo_widget'):
@@ -4286,7 +4362,7 @@ class MT5AdaptiveTradingBot:
                     'GLOBAL_SL': 30.0,
                     'MIN_RANGE': 1.0,
                 },
-                'SILVER': {
+                'XAUEUR': {
                     'VOL': 0.01,
                     'TP_DIFF': 1.0,  # ⭐ SINCRONIZADO CON GOLD (era 0.5)
                     'SL_DIFF': 30.0,  # ⭐ SINCRONIZADO CON GOLD (era 0.20)
@@ -4360,14 +4436,16 @@ class MT5AdaptiveTradingBot:
             ("VIDYA EMA:", 'GOLD_VIDYA_EMA'),
             ("Filtro Impulso (puntos):", 'GOLD_IMPULSE_FILTER'),
             
-            # ⭐ CONFIG ÓPTIMA PARA SILVER (Scalping M1/M5)
-            ("🔥 ⚙️ CONFIG ÓPTIMA – PLATA (XAGUSD)", None),  # Separador visual
-            ("Threshold (1.5-1.7):", 'SILVER_THRESHOLD'),
-            ("Microtendencia (velas, 3-5):", 'SILVER_MICROTREND_CANDLES'),
-            ("Cuerpo Vela Mínimo (%):", 'SILVER_CANDLE_BODY_PCT'),
-            ("VIDYA CMO:", 'SILVER_VIDYA_CMO'),
-            ("VIDYA EMA:", 'SILVER_VIDYA_EMA'),
-            ("Filtro Impulso (puntos):", 'SILVER_IMPULSE_FILTER'),
+            # ⭐ CONFIG ÓPTIMA PARA XAUEUR (Oro contra Euro - MÁS RUIDO, requiere filtros más estrictos)
+            ("🔥 ⚙️ CONFIG ÓPTIMA – XAUEUR (Oro/Euro - Anti-Ruido para Scalping)", None),  # Separador visual
+            ("Threshold (20-24, ideal 22):", 'XAUEUR_THRESHOLD'),  # Más alto para evitar falsos rompimientos
+            ("Microtendencia (4-6 velas, ideal 5):", 'XAUEUR_MICROTREND_CANDLES'),  # Más largo para continuidad clara
+            ("Cuerpo Vela Mínimo (65% anti-doji):", 'XAUEUR_CANDLE_BODY_PCT'),  # Más estricto que GOLD (60%)
+            ("Mecha Máxima (35% vs 40% GOLD):", 'XAUEUR_CANDLE_WICK_PCT'),  # Rechaza mechas largas
+            ("Cierre Fuerte (BUY≥70%, SELL≤30%):", 'XAUEUR_CANDLE_CLOSE_PCT'),  # Cierre en dirección
+            ("VIDYA CMO (13, vs 9 GOLD):", 'XAUEUR_VIDYA_CMO'),  # Más lento para filtrar ruido
+            ("VIDYA EMA (16, vs 12 GOLD):", 'XAUEUR_VIDYA_EMA'),  # Más lento para filtrar ruido
+            ("Filtro Impulso (2.5 pts vs 1.5 GOLD):", 'XAUEUR_IMPULSE_FILTER'),  # Solo movimientos reales
         ]
         
 
@@ -4390,7 +4468,7 @@ class MT5AdaptiveTradingBot:
             # ⭐ NUEVO: Combobox para SYMBOL con auto-configuración
             if key == 'SYMBOL':
                 symbol_combo = ttk.Combobox(row_frame, textvariable=self.config[key], 
-                                           values=['GOLD', 'SILVER'],
+                                           values=['GOLD', 'XAUEUR'],
                                            state='readonly', width=25,
                                            font=('Arial', 9))
                 # ⭐ NUEVO: Establecer valor inicial (por defecto GOLD)
@@ -4410,9 +4488,9 @@ class MT5AdaptiveTradingBot:
                                     width=8, justify='center')
                 spinbox.pack(side='right', fill='x', expand=True)
                 self.config_entries[key] = spinbox
-            # ⭐ SPINBOX para SILVER_THRESHOLD (rango 1.3-1.8, step 0.1)
-            elif key == 'SILVER_THRESHOLD':
-                spinbox = tk.Spinbox(row_frame, from_=1.3, to=1.8, increment=0.1,
+            # ⭐ SPINBOX para XAUEUR_THRESHOLD (rango 20-24, step 1)
+            elif key == 'XAUEUR_THRESHOLD':
+                spinbox = tk.Spinbox(row_frame, from_=20.0, to=24.0, increment=1.0,
                                     textvariable=self.config[key], bg='#475569', fg='#ec4899',
                                     relief='flat', font=('Arial', 9), insertbackground='white',
                                     width=8, justify='center')
@@ -4490,7 +4568,7 @@ class MT5AdaptiveTradingBot:
                       activebackground='#2d3e50', activeforeground='#34d399',
                       font=('Arial', 10, 'bold')).pack(side='left', padx=5)
         
-        tk.Checkbutton(sl_frame, text="⚡ Usar múltiples partes (GOLD + SILVER simultáneamente)", 
+        tk.Checkbutton(sl_frame, text="⚡ Usar múltiples partes (GOLD + XAUEUR simultáneamente)", 
                       variable=self.config['USE_MULTIPLE_PARTS'],
                       command=self._on_multiple_parts_toggle,
                       bg='#2d3e50', fg='#60a5fa', selectcolor='#1e293b',
@@ -6775,7 +6853,7 @@ class MT5AdaptiveTradingBot:
         
         MODO MÚLTIPLES PARTES:
             - Cada símbolo es 100% INDEPENDIENTE
-            - Si GOLD causa pausa de ganancia, NO afecta a SILVER
+            - Si GOLD causa pausa de ganancia, NO afecta a XAUEUR
             - Cada uno tiene su propio análisis, apertura y cierre
             - Solo EMERGENCIA (force_stop) afecta globalmente
         
@@ -6789,7 +6867,7 @@ class MT5AdaptiveTradingBot:
             return True, "🛑 EMERGENCIA: Force stop activado"
         
         # ⭐ EN MODO MÚLTIPLES PARTES: Pausas POST-OPERACIÓN son INDEPENDIENTES por símbolo
-        # Esto permite que GOLD tenga pausa pero SILVER abra normalmente
+        # Esto permite que GOLD tenga pausa pero XAUEUR abra normalmente
         try:
             use_multiple = self.config.get('USE_MULTIPLE_PARTS', tk.BooleanVar(value=False)).get()
         except:
@@ -7730,7 +7808,7 @@ class MT5AdaptiveTradingBot:
                         if time.time() - self._last_snap_reload >= float(reload_interval):
                             try:
                                 # ⭐ Recargar AMBOS símbolos para mantener datos actualizados
-                                for reload_symbol in ['GOLD', 'SILVER']:
+                                for reload_symbol in ['GOLD', 'XAUEUR']:
                                     try:
                                         self.reload_market_snapshots(symbol=reload_symbol)
                                     except Exception:
@@ -7931,25 +8009,25 @@ class MT5AdaptiveTradingBot:
                                     'success'
                                 )
                             
-                            # ⭐ NUEVO: Si es SILVER, validar contra configuración óptima
-                            elif symbol.upper() == 'SILVER' or symbol == 'XAGUSD':
-                                self.add_log(f"\n🔥 Aplicando validación CONFIG ÓPTIMA para SILVER...", 'info')
-                                silver_validation = self._validate_silver_optimal_entry(symbol, direccion)
+                            # ⭐ NUEVO: Si es XAUEUR, validar contra configuración óptima
+                            elif symbol.upper() == 'XAUEUR' or symbol == 'XAUEUR':
+                                self.add_log(f"\n🔥 Aplicando validación CONFIG ÓPTIMA para XAUEUR...", 'info')
+                                xaueur_validation = self._validate_xaueur_optimal_entry(symbol, direccion)
                                 
-                                if not silver_validation.get('valid', False):
+                                if not xaueur_validation.get('valid', False):
                                     self.add_log(
-                                        f"[❌ CONFIG SILVER RECHAZÓ] {silver_validation.get('reason', 'No cumple criterios')}",
+                                        f"[❌ CONFIG XAUEUR RECHAZÓ] {xaueur_validation.get('reason', 'No cumple criterios')}",
                                         'warning'
                                     )
                                     time.sleep(0.05)
                                     continue
                                 
-                                # Incorporar score de SILVER en confianza final
-                                silver_score = silver_validation.get('score', 0)
-                                combined_confidence = (signal_confidence + multi_analysis['confidence'] + silver_score) / 3
+                                # Incorporar score de XAUEUR en confianza final
+                                xaueur_score = xaueur_validation.get('score', 0)
+                                combined_confidence = (signal_confidence + multi_analysis['confidence'] + xaueur_score) / 3
                                 self.add_log(
                                     f"[✅ VALIDACIÓN COMPLETA] Confianza final: {combined_confidence:.1f}% "
-                                    f"(Análisis + Multi-período + CONFIG SILVER)",
+                                    f"(Análisis + Multi-período + CONFIG XAUEUR)",
                                     'success'
                                 )
                             else:
@@ -8146,7 +8224,7 @@ class MT5AdaptiveTradingBot:
             try:
                 # ⭐ Recargar AMBOS símbolos para datos frescos
                 snaps = []
-                for reload_symbol in ['GOLD', 'SILVER']:
+                for reload_symbol in ['GOLD', 'XAUEUR']:
                     try:
                         sym_snaps = self.reload_market_snapshots(symbol=reload_symbol) or []
                         if reload_symbol == 'GOLD':  # Usar GOLD como principal
@@ -9001,12 +9079,12 @@ class MT5AdaptiveTradingBot:
 
     def abrir_operacion_smart(self, direccion, force=False, startup=False):
         """
-        ⭐ APERTURA INTELIGENTE - Detecta si usar múltiples partes (GOLD + SILVER simultáneamente)
+        ⭐ APERTURA INTELIGENTE - Detecta si usar múltiples partes (GOLD + XAUEUR simultáneamente)
         
         - Si USE_MULTIPLE_PARTS=False: Abre 1 operación en símbolo configurado (normal)
-        - Si USE_MULTIPLE_PARTS=True: Abre 1 en GOLD + 1 en SILVER CON ANÁLISIS INDEPENDIENTE
+        - Si USE_MULTIPLE_PARTS=True: Abre 1 en GOLD + 1 en XAUEUR CON ANÁLISIS INDEPENDIENTE
           → Cada una se analiza y determina su propia dirección óptima (BUY o SELL)
-          → Cada una con sus propios parámetros GOLD_THRESHOLD/SILVER_THRESHOLD
+          → Cada una con sus propios parámetros GOLD_THRESHOLD/XAUEUR_THRESHOLD
           → Cada una con su propia monitorización
           → Comparten SOLO TP Global y SL Global
         
@@ -9021,9 +9099,9 @@ class MT5AdaptiveTradingBot:
             # Modo normal: 1 operación en símbolo configurado
             return self.abrir_operacion(direccion, force=force, startup=startup)
         
-        # ⭐ MODO MÚLTIPLES PARTES: Abrir en GOLD + SILVER CON LA MISMA DIRECCIÓN (CORRELACIONADOS)
+        # ⭐ MODO MÚLTIPLES PARTES: Abrir en GOLD + XAUEUR CON ANÁLISIS INDEPENDIENTE
         self.add_log(f"\n{'='*60}", 'warning')
-        self.add_log(f"[MÚLTIPLES PARTES] Analizando GOLD y SILVER (misma dirección - correlacionados)...", 'warning')
+        self.add_log(f"[MÚLTIPLES PARTES] Analizando GOLD y XAUEUR (análisis INDEPENDIENTE)...", 'warning')
         self.add_log(f"{'='*60}\n", 'warning')
         
         symbol_actual = self.config['SYMBOL'].get()
@@ -9036,11 +9114,10 @@ class MT5AdaptiveTradingBot:
         # Pausa mínima entre análisis
         time.sleep(0.3)
         
-        # ⭐ USAR LA MISMA DIRECCIÓN PARA SILVER (Altamente correlacionados con GOLD)
-        silver_direction = gold_direction  # ⭐ CRÍTICO: SILVER sigue a GOLD (correlación ~0.95)
-        silver_buy_score = gold_buy_score  # Usar los mismos scores
-        silver_sell_score = gold_sell_score
-        self.add_log(f"[2/3] ✅ SILVER: Usando dirección de GOLD = {silver_direction} (correlacionados, BUY={silver_buy_score:.1f}, SELL={silver_sell_score:.1f})", 'success')
+        # ⭐ ANÁLISIS INDEPENDIENTE PARA XAUEUR (NO copia dirección de GOLD)
+        self.add_log(f"[2/3] Analizando XAUEUR (análisis INDEPENDIENTE)...", 'info')
+        xaueur_direction, xaueur_buy_score, xaueur_sell_score, _ = self._quick_analysis_for_forced_reopen('XAUEUR')
+        self.add_log(f"[2/3] ✅ XAUEUR: Dirección óptima = {xaueur_direction} (BUY={xaueur_buy_score:.1f}, SELL={xaueur_sell_score:.1f}) - ANÁLISIS INDEPENDIENTE", 'success')
         
         # ⭐ ABRIR EN GOLD CON SU DIRECCIÓN ÓPTIMA
         self.add_log(f"[3/3] Abriendo en GOLD con dirección {gold_direction}...", 'info')
@@ -9051,25 +9128,25 @@ class MT5AdaptiveTradingBot:
         # Pausa mínima entre órdenes para evitar race conditions
         time.sleep(0.5)
         
-        # ⭐ ABRIR EN SILVER CON LA MISMA DIRECCIÓN (Correlacionados)
-        self.add_log(f"[3/3 - Parte 2] Abriendo en SILVER con dirección {silver_direction} (igual a GOLD - correlacionados)...", 'info')
-        self.config['SYMBOL'].set('SILVER')
-        self._configure_symbol_parameters('SILVER')  # ⭐ NUEVO: Reconfigura parámetros para SILVER
-        silver_result = self.abrir_operacion(silver_direction, force=force, startup=startup)
+        # ⭐ ABRIR EN XAUEUR CON SU PROPIA DIRECCIÓN (Análisis independiente)
+        self.add_log(f"[3/3 - Parte 2] Abriendo en XAUEUR con dirección {xaueur_direction} (INDEPENDIENTE de GOLD)...", 'info')
+        self.config['SYMBOL'].set('XAUEUR')
+        self._configure_symbol_parameters('XAUEUR')  # ⭐ NUEVO: Reconfigura parámetros para XAUEUR
+        xaueur_result = self.abrir_operacion(xaueur_direction, force=force, startup=startup)
         
         # Restaurar símbolo original
         self.config['SYMBOL'].set(symbol_actual)
         
         # Log resultado
-        if gold_result and silver_result:
-            self.add_log(f"[ÉXITO] Ambas partes abiertas: GOLD({gold_direction})✅ + SILVER({silver_direction})✅", 'success')
+        if gold_result and xaueur_result:
+            self.add_log(f"[ÉXITO] Ambas partes abiertas INDEPENDIENTEMENTE: GOLD({gold_direction})✅ + XAUEUR({xaueur_direction})✅", 'success')
             return True
-        elif gold_result or silver_result:
-            status = f"GOLD({gold_direction}){'✅' if gold_result else '❌'} + SILVER({silver_direction}){'✅' if silver_result else '❌'}"
-            self.add_log(f"[PARCIAL] Una parte abierta: {status}", 'warning')
+        elif gold_result or xaueur_result:
+            status = f"GOLD({gold_direction}){'✅' if gold_result else '❌'} + XAUEUR({xaueur_direction}){'✅' if xaueur_result else '❌'}"
+            self.add_log(f"[PARCIAL] Una parte abierta (análisis independiente): {status}", 'warning')
             return True  # Retornar True si al menos una abrió
         else:
-            self.add_log(f"[FALLO] Ninguna parte se abrió: GOLD({gold_direction})❌ + SILVER({silver_direction})❌", 'error')
+            self.add_log(f"[FALLO] Ninguna parte se abrió: GOLD({gold_direction})❌ + XAUEUR({xaueur_direction})❌", 'error')
             return False
 
     def abrir_operacion(self, direccion_sugerida, force=False, startup=False, force_params=None):
@@ -9349,7 +9426,7 @@ class MT5AdaptiveTradingBot:
                 use_multiple = False
             
             # En modo múltiples partes, cada símbolo usa su propio contador sin considerar el otro
-            # Esto permite GOLD tener MAX_OPS y SILVER tener MAX_OPS simultáneamente
+            # Esto permite GOLD tener MAX_OPS y XAUEUR tener MAX_OPS simultáneamente
             if use_multiple:
                 # Cada símbolo puede tener hasta MAX_OPS sin restricción del otro
                 effective_max = max_ops
@@ -9406,7 +9483,7 @@ class MT5AdaptiveTradingBot:
                     # ⭐ Recargar ambos símbolos al startup
                     snaps = self.reload_market_snapshots(symbol='GOLD') or []
                     if not snaps:
-                        snaps = self.reload_market_snapshots(symbol='SILVER') or []
+                        snaps = self.reload_market_snapshots(symbol='XAUEUR') or []
                 except Exception as e:
                     logger.exception("Error leyendo market_snapshots en apertura startup")
                     self.add_log(f"[STARTUP] ⚠️ Error loading snapshots: {str(e)[:60]}", 'warning')
@@ -9988,9 +10065,9 @@ class MT5AdaptiveTradingBot:
                 logger.warning("[INIT] ⚠️ Symbol del config está VACÍO, usando GOLD por defecto")
                 symbol = 'GOLD'
             
-            # ⭐ NUEVO: Cargar datos para AMBOS GOLD y SILVER al inicio
-            self.add_log("[INIT] Cargando datos para GOLD y SILVER...", 'info')
-            for load_symbol in ['GOLD', 'SILVER']:
+            # ⭐ NUEVO: Cargar datos para AMBOS GOLD y XAUEUR al inicio
+            self.add_log("[INIT] Cargando datos para GOLD y XAUEUR...", 'info')
+            for load_symbol in ['GOLD', 'XAUEUR']:
                 try:
                     filled, prefilled_snapshots = prefill_market_data_and_return(load_symbol, minutes=500)
                     logger.info(f"[INIT-PREFILL] ✓ {load_symbol}: {filled} snapshots en memoria")
@@ -10004,24 +10081,24 @@ class MT5AdaptiveTradingBot:
                 except Exception as e:
                     logger.warning(f"[INIT-PREFILL] Error cargando {load_symbol}: {str(e)[:50]}")
             
-            self.add_log("[OK] Datos de GOLD y SILVER cargados exitosamente", 'success')
+            self.add_log("[OK] Datos de GOLD y XAUEUR cargados exitosamente", 'success')
             
             # ⭐ INICIALIZAR self.market_snapshots con GOLD (símbolo por defecto)
             # No cargar símbolo adicional del config para evitar símbolo vacío
             if 'GOLD' in self.market_snapshots_by_symbol and len(self.market_snapshots_by_symbol['GOLD']) > 0:
                 self.market_snapshots = self.market_snapshots_by_symbol['GOLD']
                 logger.info(f"[INIT-FINAL] ✓ market_snapshots = GOLD ({len(self.market_snapshots)} items)")
-            elif 'SILVER' in self.market_snapshots_by_symbol and len(self.market_snapshots_by_symbol['SILVER']) > 0:
-                self.market_snapshots = self.market_snapshots_by_symbol['SILVER']
-                logger.info(f"[INIT-FINAL] ✓ market_snapshots = SILVER ({len(self.market_snapshots)} items)")
+            elif 'XAUEUR' in self.market_snapshots_by_symbol and len(self.market_snapshots_by_symbol['XAUEUR']) > 0:
+                self.market_snapshots = self.market_snapshots_by_symbol['XAUEUR']
+                logger.info(f"[INIT-FINAL] ✓ market_snapshots = XAUEUR ({len(self.market_snapshots)} items)")
             else:
-                logger.warning("[INIT-FINAL] ⚠️ Ambos GOLD y SILVER vacíos, inicializando lista vacía")
+                logger.warning("[INIT-FINAL] ⚠️ Ambos GOLD y XAUEUR vacíos, inicializando lista vacía")
                 self.market_snapshots = []
             
             final_count = len(self.market_snapshots) if isinstance(self.market_snapshots, list) else 0
             logger.info(f"[INIT-FINAL] Estado final: market_snapshots = {final_count} items")
 
-            self.add_log(f"🗂️ Datos de GOLD y SILVER prefilled en logs", 'info')
+            self.add_log(f"🗂️ Datos de GOLD y XAUEUR prefilled en logs", 'info')
 
             # ⭐ CRÍTICO: Iniciar trend_monitor JUSTO AHORA, ANTES de evaluate_snapshots_and_open
             # Esto permite que realice su análisis INMEDIATO antes de que el scheduler intente abrir
@@ -10097,7 +10174,7 @@ class MT5AdaptiveTradingBot:
                     last_dual_reload = 0  # ⭐ TIMESTAMP del último reload dual
                     while getattr(self, '_scheduler_running', True):
                         try:
-                            # ⭐ NUEVO: Recargar snapshots para AMBOS GOLD y SILVER cada 5-10 segundos
+                            # ⭐ NUEVO: Recargar snapshots para AMBOS GOLD y XAUEUR cada 5-10 segundos
                             now = time.time()
                             if (now - last_dual_reload) > 5.0:  # Cada 5 segundos
                                 try:
@@ -15829,21 +15906,27 @@ Se abrirá al precio actual de mercado."""
                 'reason': f'Excepción: {str(e)}'
             }
 
-    def _validate_silver_optimal_entry(self, symbol, direction, snapshots=None):
+    def _validate_xaueur_optimal_entry(self, symbol, direction, snapshots=None):
         """
-        ⭐ VALIDACIÓN INTERNA: CONFIG ÓPTIMA PARA SILVER (XAGUSD) - 6 CRITERIOS
+        ⭐ VALIDACIÓN INTERNA: CONFIG ÓPTIMA PARA XAUEUR (Oro/Euro) - 6 CRITERIOS ANTI-RUIDO
         
-        🔥 IGUAL QUE GOLD, pero con parámetros ajustados para plata más rápida:
+        🔥 PARÁMETROS MÁS ESTRICTOS QUE GOLD para evitar ruido en scalping:
         
         Validaciones en secuencia:
-        🟡 1. THRESHOLD: 15 pips (más bajo que ORO - plata más rápida)
-        🟡 2. MICROTENDENCIA MULTI-PERÍODO (igual 3-5 velas, ideal 4)
-        🟡 3. FILTRO DE VELA (3 CRITERIOS - igual 60/40/70)
-        🟡 4. IMPULSO: ≥ 1.5 puntos (igual que ORO)
-        🚫 5. FILTRO ANTI-RUIDO (igual: mechas grandes, lateral, pequeñas)
-        📈 6. INDICADOR VIDYA (igual: CMO:9, EMA:12)
+        🎯 1. THRESHOLD: 22 pips (más alto que GOLD 18 - evita falsos rompimientos)
+        🟡 2. MICROTENDENCIA MULTI-PERÍODO: 5 velas (vs 4 GOLD) - requiere continuidad clara
+        🟡 3. FILTRO DE VELA (CRÍTICO - 3 CRITERIOS MÁS ESTRICTOS):
+           ├─ Cuerpo ≥ 65% (vs 60% GOLD) - Elimina dojis
+           ├─ Mechas ≤ 35% (vs 40% GOLD) - Rechaza mechas largas
+           └─ Cierre fuerte (≥70%/≤30%) en dirección
+        🔋 4. IMPULSO: ≥ 2.5 puntos (vs 1.5 GOLD) - Solo movimientos reales
+        🚫 5. FILTRO ANTI-RUIDO (evitar: mercado lateral, velas pequeñas, spread amplio)
+        📈 6. INDICADOR VIDYA: CMO:13, EMA:16 (vs CMO:9, EMA:12 GOLD) - Más lento para filtrar ruido
         
-        ⚠️ NOTA: Si el ORO no está claro, NO operes PLATA (más riesgoso)
+        ⚠️ NOTA: XAUEUR es menos volátil pero PRODUCE MÁS RUIDO - SOLO operar si:
+              ✅ Tendencia clara (4-5 velas confirmadas)
+              ✅ Impulso real (2.5+ puntos)
+              ✅ VIDYA alineado
         
         Retorna: {
             'valid': bool,
@@ -15864,9 +15947,9 @@ Se abrirá al precio actual de mercado."""
             
             checks = {}
             
-            # ⭐ 1. VALIDAR THRESHOLD (EN PIPS - SILVER MÁS RÁPIDO QUE GOLD)
+            # ⭐ 1. VALIDAR THRESHOLD (EN PIPS - XAUEUR 22 PARA EVITAR FALSOS ROMPIMIENTOS)
             try:
-                threshold_pips = float(self.config.get('SILVER_THRESHOLD', tk.DoubleVar(value=15)).get())
+                threshold_pips = float(self.config.get('XAUEUR_THRESHOLD', tk.DoubleVar(value=22)).get())
             except:
                 threshold_pips = 15
             
@@ -15886,13 +15969,13 @@ Se abrirá al precio actual de mercado."""
                     'threshold_pips': threshold_pips
                 }
             
-            # ⭐ 2. VALIDAR MICROTENDENCIA MULTI-PERÍODO (IDÉNTICO A GOLD)
+            # ⭐ 2. VALIDAR MICROTENDENCIA MULTI-PERÍODO (5 VELAS - MÁS LARGO QUE GOLD)
             try:
-                microtrend_candles = int(self.config.get('SILVER_MICROTREND_CANDLES', tk.IntVar(value=4)).get())
+                microtrend_candles = int(self.config.get('XAUEUR_MICROTREND_CANDLES', tk.IntVar(value=5)).get())
             except:
-                microtrend_candles = 4
+                microtrend_candles = 5
             
-            microtrend_candles = max(3, min(5, microtrend_candles))
+            microtrend_candles = max(4, min(6, microtrend_candles))
             
             context_10_up = context_10_down = 0
             context_20_up = context_20_down = 0
@@ -15958,14 +16041,14 @@ Se abrirá al precio actual de mercado."""
                 'reason': f"Contexto: {context_agreement} + Recientes: {recent_ok}"
             }
             
-            # ⭐ 3. FILTRO DE VELA (IDÉNTICO A GOLD)
+            # ⭐ 3. FILTRO DE VELA (MÁS ESTRICTO QUE GOLD - 65% CUERPO, 35% MECHA)
             try:
-                candle_body_pct = int(self.config.get('SILVER_CANDLE_BODY_PCT', tk.IntVar(value=60)).get())
-                candle_wick_pct = int(self.config.get('SILVER_CANDLE_WICK_PCT', tk.IntVar(value=40)).get())
-                candle_close_pct = int(self.config.get('SILVER_CANDLE_CLOSE_PCT', tk.IntVar(value=70)).get())
+                candle_body_pct = int(self.config.get('XAUEUR_CANDLE_BODY_PCT', tk.IntVar(value=65)).get())
+                candle_wick_pct = int(self.config.get('XAUEUR_CANDLE_WICK_PCT', tk.IntVar(value=35)).get())
+                candle_close_pct = int(self.config.get('XAUEUR_CANDLE_CLOSE_PCT', tk.IntVar(value=70)).get())
             except:
-                candle_body_pct = 60
-                candle_wick_pct = 40
+                candle_body_pct = 65
+                candle_wick_pct = 35
                 candle_close_pct = 70
             
             last_candle = snapshots[-1] if snapshots else {}
@@ -16020,9 +16103,9 @@ Se abrirá al precio actual de mercado."""
             
             # ⭐ 4. VALIDAR IMPULSO (IDÉNTICO A GOLD)
             try:
-                impulse_filter = float(self.config.get('SILVER_IMPULSE_FILTER', tk.DoubleVar(value=1.5)).get())
+                impulse_filter = float(self.config.get('XAUEUR_IMPULSE_FILTER', tk.DoubleVar(value=2.5)).get())
             except:
-                impulse_filter = 1.5
+                impulse_filter = 2.5
             
             if len(snapshots) >= 3:
                 last_3_opens = [float(snapshots[-3].get('open', 0)), float(snapshots[-2].get('open', 0)), float(snapshots[-1].get('open', 0))]
@@ -16136,13 +16219,13 @@ Se abrirá al precio actual de mercado."""
                 'reason': " | ".join(noise_reasons) if noise_reasons else "✅ Sin ruido detectado"
             }
             
-            # ⭐ 6. VALIDAR VIDYA (IDÉNTICO A GOLD)
+            # ⭐ 6. VALIDAR VIDYA (MÁS LENTO QUE GOLD - CMO:13, EMA:16 PARA FILTRAR RUIDO)
             try:
-                vidya_cmo = int(self.config.get('SILVER_VIDYA_CMO', tk.IntVar(value=9)).get())
-                vidya_ema = int(self.config.get('SILVER_VIDYA_EMA', tk.IntVar(value=12)).get())
+                vidya_cmo = int(self.config.get('XAUEUR_VIDYA_CMO', tk.IntVar(value=13)).get())
+                vidya_ema = int(self.config.get('XAUEUR_VIDYA_EMA', tk.IntVar(value=16)).get())
             except:
-                vidya_cmo = 9
-                vidya_ema = 12
+                vidya_cmo = 13
+                vidya_ema = 16
             
             last_velas_for_vidya = snapshots[-30:] if len(snapshots) >= 30 else snapshots
             
@@ -16188,7 +16271,7 @@ Se abrirá al precio actual de mercado."""
                             vidya_valid = (current_price < vidya_current) and (slope_diff < 0)
                 
                 except Exception as e:
-                    logger.error(f"Error calculando VIDYA en validación SILVER: {str(e)}")
+                    logger.error(f"Error calculando VIDYA en validación XAUEUR: {str(e)}")
                     vidya_valid = False
             
             checks['vidya'] = {
@@ -16233,7 +16316,7 @@ Se abrirá al precio actual de mercado."""
                     score += 17
             
             # LOGS
-            self.add_log(f"\n🔥 VALIDACIÓN CONFIG ÓPTIMA SILVER:", 'info')
+            self.add_log(f"\n🔥 VALIDACIÓN CONFIG ÓPTIMA XAUEUR:", 'info')
             self.add_log(f"   ✓ Threshold: {checks['threshold']['value']:.2f} >= {checks['threshold']['required']:.2f} ({checks['threshold']['threshold_pips']:.0f} pips): {'✅' if checks['threshold']['valid'] else '❌'}", 'info')
             
             self.add_log(f"   ✓ Microtendencia ({microtrend_candles}v): {checks['microtrend']['recent_details']}", 'info')
@@ -16274,7 +16357,7 @@ Se abrirá al precio actual de mercado."""
             }
             
         except Exception as e:
-            self.add_log(f"[ERROR] Validación SILVER falló: {str(e)}", 'error')
+            self.add_log(f"[ERROR] Validación XAUEUR falló: {str(e)}", 'error')
             return {
                 'valid': False,
                 'score': 0,
