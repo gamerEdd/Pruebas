@@ -7,17 +7,30 @@ sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='repla
 # ⭐ LOGGING A ARCHIVO - Captura TODO lo que sucede en el bot
 import logging
 from logging.handlers import RotatingFileHandler
+import os
 
-# Configurar logger global para capturar TODOS los eventos
-LOG_FILE = 'bot_execution.log'
+# Crear carpeta logs si no existe
+os.makedirs('logs', exist_ok=True)
+
+# ⭐ LIMPIAR LOGS ANTERIORES AL INICIAR NUEVA SESIÓN (cada sesión comienza desde 0)
+LOG_FILE = 'logs/bot.log'
+try:
+    # Borrar archivo de log anterior para comenzar sesión limpia
+    if os.path.exists(LOG_FILE):
+        os.remove(LOG_FILE)
+except Exception as e:
+    print(f"[WARN] No se pudo limpiar log anterior: {e}")
+
+# Configurar logger global para capturar EVENTOS IMPORTANTES (WARNING+)
 logger = logging.getLogger('boteddver1')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.WARNING)  # ⭐ CRÍTICO: Bloquea INFO completamente
 logger.propagate = False  # Evitar duplicados
 
-# Handler para archivo (rotativo, máx 10MB)
+# Handler para archivo (SIN ROTACIÓN - nuevo archivo cada sesión)
 try:
-    fh = RotatingFileHandler(LOG_FILE, maxBytes=10*1024*1024, backupCount=5, encoding='utf-8')
-    fh.setLevel(logging.DEBUG)
+    # Usar FileHandler simple en modo 'a' (append) - sin rotación automática
+    fh = logging.FileHandler(LOG_FILE, mode='a', encoding='utf-8')
+    fh.setLevel(logging.WARNING)  # ⭐ SOLO WARNING y ERROR
     logger.addHandler(fh)
 except Exception as e:
     print(f"[WARN] No se pudo crear logger a archivo: {e}")
@@ -25,13 +38,13 @@ except Exception as e:
 # Handler para consola con UTF-8 encoding correcto
 try:
     ch = logging.StreamHandler(sys.stdout)
-    ch.setLevel(logging.INFO)
+    ch.setLevel(logging.WARNING)  # ⭐ Consola: solo WARNING+ para menos spam en pantalla
     # Configurar encoding UTF-8 con error handler 'replace' para caracteres no soportados
     if hasattr(ch.stream, 'reconfigure'):
         ch.stream.reconfigure(encoding='utf-8', errors='replace')
 except Exception as e:
     ch = logging.StreamHandler()
-    ch.setLevel(logging.INFO)
+    ch.setLevel(logging.WARNING)  # ⭐ Consola: solo WARNING+
 
 # Formato detallado
 formatter = logging.Formatter('[%(asctime)s] %(levelname)-8s | %(message)s', datefmt='%H:%M:%S')
@@ -185,7 +198,31 @@ for logger_name in ['loss_analyzer', 'loss_protection_ai', 'feedback_loop_ai',
     logging.getLogger(logger_name).setLevel(logging.CRITICAL)
 
 logger = logging.getLogger('MT5AdaptiveTradingBot')
-logger.setLevel(logging.DEBUG)  # ⭐ CAMBIAR a DEBUG para ver TODOS los mensajes
+logger.setLevel(logging.INFO)  # ⭐ Cambio: DEBUG -> INFO para reducir ruido
+logger.propagate = False  # No propagar a loggers padres
+
+# ⭐ Configurar handlers para el logger MT5AdaptiveTradingBot
+try:
+    # Handler para archivo (SIN ROTACIÓN - nuevo archivo cada sesión)
+    _fh_mt5 = logging.FileHandler(LOG_FILE, mode='a', encoding='utf-8')
+    _fh_mt5.setLevel(logging.INFO)  # ⭐ Cambio: DEBUG -> INFO
+    _formatter_mt5 = logging.Formatter('%(asctime)s [%(levelname)-8s] %(name)s: %(message)s')
+    _fh_mt5.setFormatter(_formatter_mt5)
+    logger.addHandler(_fh_mt5)
+except Exception as e:
+    print(f"[WARN] No se pudo añadir handler de archivo a MT5AdaptiveTradingBot: {e}")
+
+try:
+    # Handler para consola
+    _ch_mt5 = logging.StreamHandler(sys.stdout)
+    _ch_mt5.setLevel(logging.WARNING)  # ⭐ Cambio: INFO -> WARNING (menos spam en consola)
+    if hasattr(_ch_mt5.stream, 'reconfigure'):
+        _ch_mt5.stream.reconfigure(encoding='utf-8', errors='replace')
+    _formatter_mt5 = logging.Formatter('%(asctime)s [%(levelname)-8s] %(name)s: %(message)s')
+    _ch_mt5.setFormatter(_formatter_mt5)
+    logger.addHandler(_ch_mt5)
+except Exception as e:
+    print(f"[WARN] No se pudo añadir handler de consola a MT5AdaptiveTradingBot: {e}")
 
 # ⭐ NUEVO: Manejador global de excepciones no capturadas
 def _handle_exception(exc_type, exc_value, exc_traceback):
@@ -813,11 +850,11 @@ class MT5AdaptiveTradingBot:
                 reason = f"SELL mejor (gap pequeño): {sell_score:.0f}% vs BUY {buy_score:.0f}% (compliance {sell_analysis['config_compliance_score']:.0f}%)"
             
             self.add_log(
-                f"[ANÁLISIS-FINAL-BIDIRECCIONAL] 🔧 CONFIG ÓPTIMA: threshold={threshold_pips}pips, body≥{candle_body_pct}%, wick≤{candle_wick_pct}%",
+                # f"[ANÁLISIS-FINAL-BIDIRECCIONAL] 🔧 CONFIG ÓPTIMA: threshold={threshold_pips}pips, body≥{candle_body_pct}%, wick≤{candle_wick_pct}%",
                 'info'
             )
             self.add_log(
-                f"[ANÁLISIS-FINAL-BIDIRECCIONAL] BUY:{buy_score:.0f}% (compliance {buy_analysis['config_compliance_score']:.0f}%) | SELL:{sell_score:.0f}% (compliance {sell_analysis['config_compliance_score']:.0f}%) | "
+                # f"[ANÁLISIS-FINAL-BIDIRECCIONAL] BUY:{buy_score:.0f}% (compliance {buy_analysis['config_compliance_score']:.0f}%) | SELL:{sell_score:.0f}% (compliance {sell_analysis['config_compliance_score']:.0f}%) | "
                 f"GAP:{score_gap:.0f}% | RECOMENDACIÓN: {recommended_direction} ({confidence:.0f}%)",
                 'success' if recommended_direction != 'BLOCK' else 'warning'
             )
@@ -1018,7 +1055,7 @@ class MT5AdaptiveTradingBot:
             # Loguear análisis completo
             status = '✅ PUEDE ABRIR' if analysis['can_open'] else f"❌ BLOQUEADO: {analysis.get('reason', 'desconocido')}"
             self.add_log(
-                f"[ANÁLISIS-10-VELAS] {direction} | UP:{up_count} DOWN:{down_count} DOJI:{doji_count} | "
+                # f"[ANÁLISIS-10-VELAS] {direction} | UP:{up_count} DOWN:{down_count} DOJI:{doji_count} | "
                 f"Ruido:{analysis['noise_ratio']:.1%} | RSI:{analysis['rsi_level']:.0f} | {status}", 
                 'info'
             )
@@ -1205,112 +1242,106 @@ class MT5AdaptiveTradingBot:
 
     def _monitor_reversals_aggressive(self):
         """
-        ⭐ MONITOR DE REVERSIÓN INTELIGENTE: Análisis COMPLETO antes de abrir
+        ⭐ MONITOR DE DIRECCIÓN EN TIEMPO REAL - ABRE SEGÚN DIRECCIÓN DETECTADA
         
-        Cambios respecto a versión anterior:
-        1. Cooldown de 30 segundos entre aperturas (evita ruido)
-        2. Análisis COMPLETO (threshold, validación, calidad de vela)
-        3. Requiere CONFIRMACIÓN de cambio de dirección (2 ciclos = 4 seg)
-        4. Verifica que no haya posición abierta en el mismo símbolo
+        PROPÓSITO: Detecta cambios de dirección y ABRE posiciones continuamente
         """
-        last_microtrend = None
-        confirmaciones = {}  # {symbol: {'direccion': dir, 'count': n}}
-        last_open_time_by_symbol = {}  # {symbol: timestamp} - Cooldown entre aperturas
-        MIN_COOLDOWN = 30  # 30 segundos mínimo entre aperturas en el mismo símbolo
-        CONFIRMATIONS_REQUIRED = 2  # 2 ciclos de confirmación (4 segundos)
+        self.add_log("[⚡ REVERSIÓN] Monitor iniciado - ENTRANDO EN LOOP", 'info')
+        
+        last_price_direction = None
+        direction_count = 0
+        MIN_CONSECUTIVE = 3
+        last_open_time_by_dir = {'BUY': 0, 'SELL': 0}
+        COOLDOWN_SECONDS = 3
+        iteration_count = 0
         
         while getattr(self, '_scheduler_running', True):
             try:
-                time.sleep(2)  # Corre cada 2 segundos
+                iteration_count += 1
+                time.sleep(1)
                 
-                # Saltarse si bot pausado
+                # Log diagnóstico cada 30 segundos
+                if iteration_count % 30 == 0:
+                    self.add_log(f"[⚡ REVERSIÓN-VIVO] Iteración {iteration_count}, bot_pausado={self.bot_pausado}", 'debug')
+                
                 if self.bot_pausado:
                     continue
                 
                 symbol = self._get_symbol()
-                current_time = time.time()
                 
-                # ⭐ VALIDAR: No abrir si hay cooldown activo
-                if symbol in last_open_time_by_symbol:
-                    tiempo_desde_apertura = current_time - last_open_time_by_symbol[symbol]
-                    if tiempo_desde_apertura < MIN_COOLDOWN:
-                        # Cooldown activo - no hacer nada
-                        continue
+                # Últimas 3 velas
+                snapshots = self.market_snapshots_by_symbol.get(symbol, [])
+                if not snapshots or len(snapshots) < 3:
+                    if iteration_count % 30 == 0:
+                        self.add_log(f"[⚠️  SNAPSHOTS] {len(snapshots)} snapshots (requiere 3+)", 'debug')
+                    continue
                 
-                # Get actual microtrend
-                current_microtrend = self._microtrend_direction(symbol, bars=10, threshold=None)
+                recent_candles = snapshots[-3:]
+                prices = [float(c.get('close', 0)) for c in recent_candles if c.get('close')]
+                if not prices or len(prices) < 3:
+                    continue
                 
-                # ⭐ FASE 1: DETECCIÓN DE CAMBIO
-                if last_microtrend and current_microtrend != last_microtrend:
-                    if current_microtrend in ('BUY', 'SELL') and last_microtrend in ('BUY', 'SELL'):
-                        # Nuevo cambio detectado - iniciar confirmaciones
-                        confirmaciones[symbol] = {'direccion': current_microtrend, 'count': 1}
-                        self.add_log(f"[⚡ REVERSIÓN-NIVEL1] {last_microtrend} → {current_microtrend} (confirmación 1/{CONFIRMATIONS_REQUIRED})", 'warning')
+                # ⭐ DETECTAR DIRECCIÓN REAL DEL PRECIO
+                price_now = prices[-1]
+                price_3_back = prices[0]
                 
-                # ⭐ FASE 2: CONTAR CONFIRMACIONES
-                elif symbol in confirmaciones:
-                    if confirmaciones[symbol]['direccion'] == current_microtrend:
-                        confirmaciones[symbol]['count'] += 1
-                        self.add_log(f"[⚡ REVERSIÓN-NIVEL2] {current_microtrend} confirmado ({confirmaciones[symbol]['count']}/{CONFIRMATIONS_REQUIRED})", 'info')
+                if price_now > price_3_back:
+                    current_direction = 'UP'
+                elif price_now < price_3_back:
+                    current_direction = 'DOWN'
+                else:
+                    current_direction = None
+                
+                if not current_direction:
+                    continue
+                
+                # ⭐ CONTAR VELAS CONSECUTIVAS
+                if current_direction == last_price_direction:
+                    direction_count += 1
+                else:
+                    direction_count = 1
+                    last_price_direction = current_direction
+                    self.add_log(f"[🔄 CAMBIO] Dirección: {current_direction} (counter reset)", 'info')
+                
+                # ⭐ CUANDO DETECTA 3+ VELAS CONSECUTIVAS
+                if direction_count >= MIN_CONSECUTIVE:
+                    new_direction = 'BUY' if current_direction == 'UP' else 'SELL'
+                    current_time = time.time()
+                    time_since_last = current_time - last_open_time_by_dir[new_direction]
+                    
+                    if time_since_last >= COOLDOWN_SECONDS:
+                        self.add_log(f"[📊 SEÑAL] {current_direction} ({direction_count} velas) | Precios: {price_3_back:.2f}→{price_now:.2f} | ABRIR {new_direction}", 'info')
                         
-                        # ⭐ FASE 3: SUFICIENTES CONFIRMACIONES - ANÁLISIS COMPLETO ANTES DE ABRIR
-                        if confirmaciones[symbol]['count'] >= CONFIRMATIONS_REQUIRED:
-                            new_direction = confirmaciones[symbol]['direccion']
-                            
-                            # ⭐ ANÁLISIS COMPLETO (no confiar solo en microtrend)
-                            self.add_log(f"\n[🔍 ANÁLISIS PROFUNDO] Verificando {new_direction}...", 'info')
-                            
-                            # Hacer análisis completo como si fuera una entrada fría
-                            analysis_direction, buy_score, sell_score, analysis_data = self._quick_analysis_for_forced_reopen(symbol)
-                            
-                            # ⭐ VALIDACIONES CRÍTICAS
-                            validations_passed = True
-                            validation_reasons = []
-                            
-                            # 1. Verificar que el análisis completo concuerde con la reversión
-                            if analysis_direction != new_direction:
-                                validations_passed = False
-                                validation_reasons.append(f"Dirección diverge: microtrend={new_direction}, análisis={analysis_direction}")
-                            
-                            # 2. Verificar confianza mínima
+                        # ⭐ ANÁLISIS COMPLETO
+                        try:
+                            analysis_dir, buy_score, sell_score, _ = self._quick_analysis_for_forced_reopen(symbol)
                             score = buy_score if new_direction == 'BUY' else sell_score
-                            if score < 2.0:
-                                validations_passed = False
-                                validation_reasons.append(f"Confianza baja: {score:.1f} (min: 2.0)")
                             
-                            # 3. Verificar que no haya posición abierta (evita apilar operaciones)
-                            positions = mt5.positions_get(symbol=symbol) or []
-                            if positions:
-                                validations_passed = False
-                                validation_reasons.append(f"Ya hay {len(positions)} posición(es) abierta(s)")
+                            self.add_log(f"[📈 ANÁLISIS] Dir={analysis_dir} | Score={score:.2f} | Target={new_direction}", 'info')
                             
-                            # ⭐ DECISIÓN FINAL
-                            if validations_passed:
-                                self.add_log(f"[✅ VALIDACIONES OK] Análisis={analysis_direction}, BUY={buy_score:.1f}, SELL={sell_score:.1f}", 'success')
-                                self.add_log(f"[🚀 ABRIENDO] {new_direction} con confianza {score:.1f}", 'success')
+                            # ⭐ VALIDAR
+                            if analysis_dir == new_direction and score >= 1.5:
+                                self.add_log(f"[✅ VÁLIDO] Abriendo {new_direction} (análisis OK, score={score:.2f})", 'success')
                                 
                                 try:
                                     self.abrir_operacion_smart(new_direction, force=True, startup=False)
-                                    last_open_time_by_symbol[symbol] = current_time
-                                    self.add_log(f"[✅ OPERACIÓN EJECUTADA] {new_direction}", 'success')
+                                    last_open_time_by_dir[new_direction] = current_time
                                 except Exception as e:
-                                    self.add_log(f"[❌ ERROR APERTURA] {str(e)[:40]}", 'error')
+                                    self.add_log(f"[❌ APERTURA FALLÓ] {str(e)[:50]}", 'error')
                             else:
-                                self.add_log(f"[❌ VALIDACIÓN FALLIDA] {' | '.join(validation_reasons)}", 'warning')
-                            
-                            # Limpiar confirmaciones
-                            confirmaciones.pop(symbol, None)
-                    else:
-                        # Dirección cambió de nuevo - reiniciar confirmaciones
-                        confirmaciones[symbol] = {'direccion': current_microtrend, 'count': 1}
-                        self.add_log(f"[⚡ REVERSIÓN-REINICIO] Cambio a {current_microtrend}", 'info')
-                
-                # Actualizar último estado
-                if current_microtrend in ('BUY', 'SELL'):
-                    last_microtrend = current_microtrend
+                                audit_msg = []
+                                if analysis_dir != new_direction:
+                                    audit_msg.append(f"DIVERGENCIA (análisis={analysis_dir}, target={new_direction})")
+                                if score < 1.5:
+                                    audit_msg.append(f"SCORE BAJO ({score:.2f})")
+                                
+                                self.add_log(f"[⚠️  RECHAZADO] {' | '.join(audit_msg)}", 'warning')
+                        
+                        except Exception as e:
+                            self.add_log(f"[❌ ANÁLISIS ERROR] {str(e)[:50]}", 'error')
                 
             except Exception as e:
-                self.add_log(f"[MONITOR-REVERSIÓN] Error: {str(e)[:40]}", 'error')
+                self.add_log(f"[MONITOR-ERROR] {str(e)[:60]}", 'error')
                 continue
 
     def stop_ghost_operations(self):
@@ -2348,8 +2379,8 @@ class MT5AdaptiveTradingBot:
         needs_fresh_reload = (self.last_successful_reload_time > 0 and time_since_init > 240)  # 240s = 4 minutos
         
         if needs_fresh_reload:
-            logger.info(f"[reload] ⭐ CICLO DE 4M DETECTADO: {time_since_init:.0f}s desde último reload exitoso")
-            logger.info(f"[reload] Iniciando RECARGA FRESCA...")
+            # logger.info(f"[reload] ⭐ CICLO DE 4M DETECTADO: {time_since_init:.0f}s desde último reload exitoso")
+            # logger.info(f"[reload] Iniciando RECARGA FRESCA...")
             try:
                 # ⭐ CRÍTICO: Respetar el símbolo pasado como parámetro
                 # Solo usar config como fallback si está VACÍO
@@ -2360,11 +2391,11 @@ class MT5AdaptiveTradingBot:
                     symbol = 'GOLD'
                     
                 filled, fresh_snaps = prefill_market_data_and_return(symbol, minutes=500)
-                logger.info(f"[reload] ✓ RECARGA FRESCA ({symbol}): {filled} snapshots frescos obtenidos")
+                # logger.info(f"[reload] ✓ RECARGA FRESCA ({symbol}): {filled} snapshots frescos obtenidos")
                 if len(fresh_snaps) > 0:
                     snaps = list(fresh_snaps)
                 else:
-                    logger.warning(f"[reload] ⚠️ RECARGA FRESCA ({symbol}): prefill retornó 0 snapshots")
+                    # logger.warning(f"[reload] ⚠️ RECARGA FRESCA ({symbol}): prefill retornó 0 snapshots")
                     snaps = []
             except Exception as e:
                 logger.error(f"[reload] ❌ Error en recarga fresca ({symbol}): {e}")
@@ -2375,27 +2406,28 @@ class MT5AdaptiveTradingBot:
             # Reload normal (incremental, no es ciclo de 4m)
             try:
                 snaps = self._read_snapshots_for_symbol(symbol) or []
-                logger.debug(f"[reload] _read_snapshots_for_symbol({symbol}) retornó {len(snaps)} barras (tipo: {type(snaps).__name__})")
+                # logger.debug(f"[reload] _read_snapshots_for_symbol({symbol}) retornó {len(snaps)} barras (tipo: {type(snaps).__name__})")
             except Exception as e:
                 logger.exception(f"[ERROR] Reading market_snapshots from disk: {str(e)[:80]}")
                 snaps = getattr(self, 'market_snapshots', []) or []
-                logger.debug(f"[reload] Fallback a self.market_snapshots: {len(snaps)} barras")
+                # logger.debug(f"[reload] Fallback a self.market_snapshots: {len(snaps)} barras")
         
         # VALIDAR: Asegurar que es lista, no dict
         if isinstance(snaps, dict):
             snaps = snaps.get('snapshots', []) if 'snapshots' in snaps else []
-            logger.debug(f"[reload] Convertida de dict a list: {len(snaps)} barras")
+            # logger.debug(f"[reload] Convertida de dict a list: {len(snaps)} barras")
         
         try:
             if isinstance(snaps, list) and len(snaps) > max_len:
                 snaps = snaps[-max_len:]
-                logger.debug(f"[reload] Truncada a max_len={max_len}: {len(snaps)} barras")
+                # logger.debug(f"[reload] Truncada a max_len={max_len}: {len(snaps)} barras")
         except Exception as e:
-            logger.debug(f"[reload] Error truncating snapshots: {str(e)[:60]}")
+            # logger.debug(f"[reload] Error truncating snapshots: {str(e)[:60]}")
+            pass
         
         # ⭐ CHECKPOINT: Antes de MT5, ¿cuántos snapshots tenemos?
         snaps_before_mt5 = len(snaps) if isinstance(snaps, list) else 0
-        logger.debug(f"[reload] CHECKPOINT antes MT5: {snaps_before_mt5} snapshots")
+        # logger.debug(f"[reload] CHECKPOINT antes MT5: {snaps_before_mt5} snapshots")
         
         # ⭐ Inicializar flag de éxito MT5
         mt5_success = False
@@ -2409,7 +2441,7 @@ class MT5AdaptiveTradingBot:
             if not symbol or symbol.strip() == '':
                 symbol = 'GOLD'
             
-            logger.debug(f"[reload] Procesando symbol: {symbol} (parámetro respetado)")
+            # logger.debug(f"[reload] Procesando symbol: {symbol} (parámetro respetado)")
             
             # ⭐ VALIDATION: Asegurar MT5 conectado
             if not mt5.initialize():
@@ -2532,7 +2564,7 @@ class MT5AdaptiveTradingBot:
                                 if len(snaps) > max_len:
                                     snaps = snaps[-max_len:]
                                 # LOG: Cambios detectados (visible)
-                                logger.info(f"[MT5] ✓ BARRAnueva: ts={new_snapshot.get('time', 0):.0f} close={new_snapshot.get('close', 0):.2f} ticks={new_snapshot.get('tick_volume')} [nuevo_min={is_new_minute}, ticks={is_new_ticks}, close={is_new_close}]")
+                                # logger.info(f"[MT5] ✓ BARRAnueva: ts={new_snapshot.get('time', 0):.0f} close={new_snapshot.get('close', 0):.2f} ticks={new_snapshot.get('tick_volume')} [nuevo_min={is_new_minute}, ticks={is_new_ticks}, close={is_new_close}]")
                                 mt5_success = True
                             else:
                                 # ⭐ NO hay cambios detectados - puede ser error en MT5 o mercado congelado
@@ -2546,7 +2578,7 @@ class MT5AdaptiveTradingBot:
                                     snaps.append(synthetic_snap)
                                     if len(snaps) > max_len:
                                         snaps = snaps[-max_len:]
-                                    logger.info(f"[MT5-SYNTH-WARN] ✓ Inyectado fallback (no cambios en rates): {synthetic_snap['close']:.2f}")
+                                    # logger.info(f"[MT5-SYNTH-WARN] ✓ Inyectado fallback (no cambios en rates): {synthetic_snap['close']:.2f}")
                                     mt5_success = False
                     else:
                         # Si no hay snapshots, agregar el nuevo
@@ -2629,13 +2661,17 @@ class MT5AdaptiveTradingBot:
                 # Usar el símbolo del parámetro del método
                 write_market_snapshots(snaps, symbol=symbol, max_snapshots=1440)  # 1440 = 24h M1
                 if mt5_success:
-                    logger.info(f"[MT5-PERSIST] ✓ Guardado archivo HISTÓRICO: {len(snaps)} barras ({symbol}, MT5 exitoso)")
+                    # logger.info(f"[MT5-PERSIST] ✓ Guardado archivo HISTÓRICO: {len(snaps)} barras ({symbol}, MT5 exitoso)")
+                    pass
                 else:
-                    logger.info(f"[MT5-PERSIST] ⚠️ Guardado archivo HISTÓRICO: {len(snaps)} barras ({symbol}, con fallback sintético)")
+                    # logger.info(f"[MT5-PERSIST] ⚠️ Guardado archivo HISTÓRICO: {len(snaps)} barras ({symbol}, con fallback sintético)")
+                    pass
             else:
-                logger.warning("[MT5-PERSIST] ⚠️ NO guardando archivo: snaps vacío")
+                # logger.warning("[MT5-PERSIST] ⚠️ NO guardando archivo: snaps vacío")
+                pass
         except Exception as e:
-            logger.warning(f"[MT5-PERSIST] ❌ Advertencia guardando snapshots: {e}")
+            # logger.warning(f"[MT5-PERSIST] ❌ Advertencia guardando snapshots: {e}")
+            pass
         
         # ⭐ ACTUALIZAR ESTRUCTURAS POR SÍMBOLO
         try:
@@ -2655,7 +2691,7 @@ class MT5AdaptiveTradingBot:
         # ⭐ MANTENER COMPATIBILIDAD CON GOLD
         if symbol == 'GOLD':
             snaps_final = snaps if isinstance(snaps, list) else self.market_snapshots_by_symbol.get('GOLD', []) if isinstance(self.market_snapshots_by_symbol.get('GOLD', []), list) else []
-            logger.info(f"[reload] FINAL: {len(snaps_final)} snapshots para {symbol}")
+            # logger.info(f"[reload] FINAL: {len(snaps_final)} snapshots para {symbol}")
             return snaps_final
         
         return snaps if isinstance(snaps, list) else []
@@ -3273,7 +3309,7 @@ class MT5AdaptiveTradingBot:
         else:
             threshold_pips = self._safe_get('MICROTREND_THRESHOLD', 18.0)
         
-        self.add_log(f"[MICROTREND/FORCED] Microtendencia detectada: {microtrend} (threshold={threshold_pips} pips por par, configurable en tiempo real)", 'info')
+        # self.add_log(f"[MICROTREND/FORCED] Microtendencia detectada: {microtrend} (threshold={threshold_pips} pips por par, configurable en tiempo real)", 'info')
         try:
             # ⭐ CRÍTICO: Usar datos FRESCOS de MT5, no JSON estático
             snaps = self.get_fresh_market_data(symbol, bars=45) or []
@@ -3358,15 +3394,15 @@ class MT5AdaptiveTradingBot:
                     min_gap = float(self._safe_get('SPECIALIST_MIN_SCORE_GAP', 4.0))
                     
                     # ⭐ DECISIÓN LIMPIA: Comparar scores PRIMERO, confianza como desempate
-                    self.add_log(f"[FORZADA] 📋 DECISIÓN BRUTA: BUY (score={buy_score:.1f}, conf={buy_conf:.0f}%) vs SELL (score={sell_score:.1f}, conf={sell_conf:.0f}%)", 'info')
+                    # self.add_log(f"[FORZADA] 📋 DECISIÓN BRUTA: BUY (score={buy_score:.1f}, conf={buy_conf:.0f}%) vs SELL (score={sell_score:.1f}, conf={sell_conf:.0f}%)", 'info')
                     
                     # Comparar por SCORE primero (mayor precisión en microtendencias)
                     if buy_score > sell_score:
                         direction = 'BUY'
-                        self.add_log(f"[FORZADA] ✅ DECISIÓN: BUY (score {buy_score:.1f} > {sell_score:.1f})", 'success')
+                        # self.add_log(f"[FORZADA] ✅ DECISIÓN: BUY (score {buy_score:.1f} > {sell_score:.1f})", 'success')
                     elif sell_score > buy_score:
                         direction = 'SELL'
-                        self.add_log(f"[FORZADA] ✅ DECISIÓN: SELL (score {sell_score:.1f} > {buy_score:.1f})", 'success')
+                        # self.add_log(f"[FORZADA] ✅ DECISIÓN: SELL (score {sell_score:.1f} > {buy_score:.1f})", 'success')
                     else:
                         # Empate de score, usar confianza como desempate
                         if buy_conf > sell_conf:
@@ -3390,7 +3426,7 @@ class MT5AdaptiveTradingBot:
                         sell_conv = (float(sell_score) * 0.70) + (float(sell_conf) * 0.30)
                         direction = 'BUY' if buy_conv >= sell_conv else 'SELL'
                         self.add_log(
-                            f"[FORZADA] 🔄 Always-open override: convicción baja (conf {chosen_conf:.0f}/{chosen_thr:.0f}, gap {score_gap:.1f}/{min_gap:.1f}) -> {direction} (BUY {buy_conv:.1f} vs SELL {sell_conv:.1f})",
+                            # f"[FORZADA] 🔄 Always-open override: convicción baja (conf {chosen_conf:.0f}/{chosen_thr:.0f}, gap {score_gap:.1f}/{min_gap:.1f}) -> {direction} (BUY {buy_conv:.1f} vs SELL {sell_conv:.1f})",
                             'warning'
                         )
                     
@@ -3468,10 +3504,11 @@ class MT5AdaptiveTradingBot:
             if direction in ('BUY', 'SELL') and microtrend in ('BUY', 'SELL') and direction != microtrend:
                 gap = abs(float(buy_score) - float(sell_score))
                 if gap < score_gap_required:
-                    self.add_log(f"[MICROTREND/FORCED] BLOQUEADO: Dirección {direction} va contra microtendencia {microtrend} y gap={gap:.2f} < {score_gap_required}", 'warning')
+                    # self.add_log(f"[MICROTREND/FORCED] BLOQUEADO: Dirección {direction} va contra microtendencia {microtrend} y gap={gap:.2f} < {score_gap_required}", 'warning')
                     return direction, buy_score, sell_score, trend_analysis  # FIX: Devolver direction, no None
                 else:
-                    self.add_log(f"[MICROTREND/FORCED] ⚠️ Permitiendo apertura contra microtendencia por gap alto: {gap:.2f}", 'warning')
+                    pass
+                    # self.add_log(f"[MICROTREND/FORCED] ⚠️ Permitiendo apertura contra microtendencia por gap alto: {gap:.2f}", 'warning')
 
             override_reason = "RAW_SCORE"
             try:
@@ -3526,7 +3563,8 @@ class MT5AdaptiveTradingBot:
                 logger.debug(f"[LIVE-OVERRIDE] Error in live override: {str(e)[:60]}")
 
             try:
-                self.add_log(f"[FORZADA] 🧭 Motivo final: {override_reason}", 'info')
+                pass
+                # self.add_log(f"[FORZADA] 🧭 Motivo final: {override_reason}", 'info')
             except Exception:
                 pass
 
@@ -4841,14 +4879,54 @@ class MT5AdaptiveTradingBot:
             logger.warning(f"Error en _log_data_statistics: {e}")
         
     def add_log(self, message, tag='info'):
-        """⭐ OPTIMIZADO: Solo actualiza labels dinámicos, sin ScrolledText"""
+        """⭐ OPTIMIZADO: Escribe a archivo + actualiza labels dinámicos"""
+        # ⭐ FILTRO: Bloquear logs diagnósticos repetitivos para reducir spam
+        # Patrones a ignorar completamente (no loguear)
+        suppress_keywords = [
+            '[VOLATILITY]',
+            'Usando 50 snapshots frescos',
+            '[TREND] Usando',
+            '[MTF] M1',
+            '[MTF] M5',
+            '[MTF] M15',
+            '[MTF] M30',
+            '[MTF] H1',
+            '[DATA] Análisis 24h',
+            '[MICROTREND/FORCED]',
+            '[ANÁLISIS-10-VELAS]',
+            '[ANÁLISIS-FINAL-BIDIRECCIONAL]',
+            '[ANÁLISIS-4VELAS',
+        ]
+        
+        for keyword in suppress_keywords:
+            if keyword in message:
+                return  # No loguear este mensaje
+        
         timestamp = datetime.now().strftime("%H:%M:%S")
         log_message = f"[{timestamp}] {message}"
         
-        # SIEMPRE imprimir a consola (thread-safe)
+        # ⭐ ESCRIBIR AL ARCHIVO DE LOG - CON MEJOR MANEJO DE EXCEPCIONES
         try:
-            pass  # No imprimir a consola para evitar sobrecarga
-        except:
+            try:
+                if tag == 'error':
+                    logger.error(message)
+                elif tag == 'success':
+                    logger.warning(message)  # ⭐ Cambio: info → warning (para que pase filtro global)
+                elif tag == 'warning':
+                    logger.warning(message)
+                elif tag == 'debug':
+                    logger.warning(message)  # ⭐ Cambio: debug → warning (para que pase filtro global)
+                else:
+                    logger.warning(message)  # ⭐ Cambio: info → warning (para que pase filtro global)
+            except (OSError, PermissionError, RuntimeError) as logging_error:
+                # Error de permisos al escribir log (ej: rotación de archivo)
+                # Simplemente ignorar y continuar
+                pass
+            except Exception as unexpected_error:
+                # Cualquier otro error en logging - silenciar
+                pass
+        except Exception as outer_error:
+            # Failsafe: Si algo inesperado ocurre, no crash
             pass
         
         # Actualizar labels dinámicamente según el tipo de mensaje
@@ -7941,7 +8019,8 @@ class MT5AdaptiveTradingBot:
                             falta_tiempo = trade_interval_seconds - tiempo_desde_ultima
                             # Log cada 5 segundos para no saturar
                             if falta_tiempo < 5 or (int(falta_tiempo) % 5 == 0):
-                                self.add_log(f"[ESPERA-INTERVALO] Falta {falta_tiempo:.1f}s (intervalo: {trade_interval_value} = {trade_interval_seconds}s)", 'info')
+                                pass
+                                # self.add_log(f"[ESPERA-INTERVALO] Falta {falta_tiempo:.1f}s (intervalo: {trade_interval_value} = {trade_interval_seconds}s)", 'info')
                             time.sleep(0.05)
                             continue
                         
@@ -8136,7 +8215,9 @@ class MT5AdaptiveTradingBot:
             'v12': None,
             'dual': None,
             'v12_done': threading.Event(),
-            'dual_done': threading.Event()
+            'dual_done': threading.Event(),
+            'v12_start': time.time(),
+            'dual_start': time.time()
         }
         
         def run_v12():
@@ -8158,6 +8239,8 @@ class MT5AdaptiveTradingBot:
                 results['dual_done'].set()
         
         # Iniciar threads
+        results['v12_start'] = time.time()
+        results['dual_start'] = time.time()
         t_v12 = threading.Thread(target=run_v12, daemon=True)
         t_dual = threading.Thread(target=run_dual, daemon=True)
         
@@ -8170,9 +8253,11 @@ class MT5AdaptiveTradingBot:
         
         # Log resumen
         if v12_completed and results['v12']:
-            self.add_log(f"[✓ ASYNC V12] Completado en ~{results['v12_done']._time:.1f}s", 'success')
+            v12_elapsed = time.time() - results['v12_start']
+            self.add_log(f"[✓ ASYNC V12] Completado en ~{v12_elapsed:.1f}s", 'success')
         if dual_completed and results['dual']:
-            self.add_log(f"[✓ ASYNC DUAL] Completado en ~{results['dual_done']._time:.1f}s", 'success')
+            dual_elapsed = time.time() - results['dual_start']
+            self.add_log(f"[✓ ASYNC DUAL] Completado en ~{dual_elapsed:.1f}s", 'success')
         
         # Elegir resultado: Prioridad a V12 si está válido, sino DUAL
         if results['v12'] and results['v12'].get('can_trade'):
@@ -8408,10 +8493,10 @@ class MT5AdaptiveTradingBot:
                 # ⭐ NUEVO: Intentar análisis multi-timeframe primero (M1, M5, M15, M30, H1)
                 if self.use_multi_timeframe.get() == True:
                     try:
-                        self.add_log("[MTF] Analyzing Buy signal across 5 timeframes...", 'info')
+                        # self.add_log("[MTF] Analyzing Buy signal across 5 timeframes...", 'info')
                         buy_mtf = self.buy_specialist.analyze_multi_timeframe(symbol)
                         
-                        self.add_log("[MTF] Analyzing Sell signal across 5 timeframes...", 'info')
+                        # self.add_log("[MTF] Analyzing Sell signal across 5 timeframes...", 'info')
                         sell_mtf = self.sell_specialist.analyze_multi_timeframe(symbol)
                         
                         if buy_mtf and sell_mtf:
@@ -8566,55 +8651,60 @@ class MT5AdaptiveTradingBot:
             self.add_log("="*70, 'info')
             
             # ⭐ COMPROBACIÓN PRIORITARIA: APERTURA FORZADA (ANTES DE ANÁLISIS NORMAL)
+            # ⭐ DESHABILITADO: La reapertura forzada ahora es ÚNICA responsabilidad del scheduler thread
+            # Esto evita conflictos de timing y ejecuciones duplicadas
+            # La verificación anterior en línea 8600-8641 está completamente deshabilitada
+            # El scheduler (línea 10250+) es el ÚNICO lugar donde se ejecuta reapertura forzada
+            # 
             # Esta lógica se ejecuta SIEMPRE, independientemente del análisis
-            try:
-                enabled_forced = bool(self.config.get('ENABLE_FORCED_OPEN', tk.BooleanVar(value=True)).get())
-            except Exception:
-                enabled_forced = True
-            try:
-                minutes = float(self.config.get('FORCED_OPEN_MINUTES', tk.DoubleVar(value=5.0)).get())
-            except Exception:
-                minutes = 5.0
-
-            intervalo, _ = self._forced_open_interval_seconds(minutes)
-            now = time.time()
-            eligible_for_forced = False
-            
-            # Comprobar si es momento de reapertura forzada
-            if getattr(self, 'next_forced_open', None):
-                try:
-                    eligible_for_forced = now >= float(self.next_forced_open)
-                except Exception:
-                    ultima_ap = getattr(self, 'ultima_apertura', 0)
-                    eligible_for_forced = (int(now - ultima_ap) >= intervalo)
-            else:
-                ultima_ap = getattr(self, 'ultima_apertura', 0)
-                eligible_for_forced = (int(now - ultima_ap) >= intervalo)
-            
-            if enabled_forced and eligible_for_forced:
-                self.add_log("\n" + "▶️"*35, 'info')
-                self.add_log("⚡ REAPERTURA FORZADA ACTIVADA (intervalo cumplido)", 'info')
-                self.add_log("▶️"*35, 'info')
-                
-                fallback_dir = getattr(self, 'direccion_actual', None)
-                if not fallback_dir:
-                    try:
-                        fallback_dir = self.analizar_entrada_inicial(symbol)
-                    except Exception:
-                        fallback_dir = 'BUY'
-
-                self.add_log(f"[RESET] Ejecutando reapertura forzada. Dirección: {fallback_dir}", 'warning')
-                try:
-                    opened = self.abrir_operacion_smart(fallback_dir, force=True)
-                    if opened:
-                        self.next_forced_open = time.time() + float(intervalo)
-                        self.add_log(f"[OK] ✅ Reapertura forzada realizada: {fallback_dir}", 'success')
-                        return {'can_trade': True, 'signal': fallback_dir, 'reason': 'Forced open executed', 'recommendation': fallback_dir}
-                    else:
-                        self.add_log("[ERROR] Reapertura forzada rechazada por filtros", 'error')
-                except Exception as e:
-                    self.add_log(f"[ERROR] Error reapertura forzada: {e}", 'error')
-                # Continuar con análisis normal aunque falle la forzada
+            # try:
+            #     enabled_forced = bool(self.config.get('ENABLE_FORCED_OPEN', tk.BooleanVar(value=True)).get())
+            # except Exception:
+            #     enabled_forced = True
+            # try:
+            #     minutes = float(self.config.get('FORCED_OPEN_MINUTES', tk.DoubleVar(value=5.0)).get())
+            # except Exception:
+            #     minutes = 5.0
+            #
+            # intervalo, _ = self._forced_open_interval_seconds(minutes)
+            # now = time.time()
+            # eligible_for_forced = False
+            # 
+            # # Comprobar si es momento de reapertura forzada
+            # if getattr(self, 'next_forced_open', None):
+            #     try:
+            #         eligible_for_forced = now >= float(self.next_forced_open)
+            #     except Exception:
+            #         ultima_ap = getattr(self, 'ultima_apertura', 0)
+            #         eligible_for_forced = (int(now - ultima_ap) >= intervalo)
+            # else:
+            #     ultima_ap = getattr(self, 'ultima_apertura', 0)
+            #     eligible_for_forced = (int(now - ultima_ap) >= intervalo)
+            # 
+            # if enabled_forced and eligible_for_forced:
+            #     self.add_log("\n" + "▶️"*35, 'info')
+            #     self.add_log("⚡ REAPERTURA FORZADA ACTIVADA (intervalo cumplido)", 'info')
+            #     self.add_log("▶️"*35, 'info')
+            #     
+            #     fallback_dir = getattr(self, 'direccion_actual', None)
+            #     if not fallback_dir:
+            #         try:
+            #             fallback_dir = self.analizar_entrada_inicial(symbol)
+            #         except Exception:
+            #             fallback_dir = 'BUY'
+            #
+            #     self.add_log(f"[RESET] Ejecutando reapertura forzada. Dirección: {fallback_dir}", 'warning')
+            #     try:
+            #         opened = self.abrir_operacion_smart(fallback_dir, force=True)
+            #         if opened:
+            #             self.next_forced_open = time.time() + float(intervalo)
+            #             self.add_log(f"[OK] ✅ Reapertura forzada realizada: {fallback_dir}", 'success')
+            #             return {'can_trade': True, 'signal': fallback_dir, 'reason': 'Forced open executed', 'recommendation': fallback_dir}
+            #         else:
+            #             self.add_log("[ERROR] Reapertura forzada rechazada por filtros", 'error')
+            #     except Exception as e:
+            #         self.add_log(f"[ERROR] Error reapertura forzada: {e}", 'error')
+            #     # Continuar con análisis normal aunque falle la forzada
             
             # ─────────────────────────────────────────────
             # PASO 1: SuperAnalyzer (6 motores votando)
@@ -9186,7 +9276,7 @@ class MT5AdaptiveTradingBot:
         analysis_reason = analysis_final_4.get('reason', '')
         
         self.add_log(
-            f"[ANÁLISIS-4VELAS-RECOMENDACIÓN] {recommended_direction} ({analysis_confidence:.0f}% confianza) | {analysis_reason}",
+            # f"[ANÁLISIS-4VELAS-RECOMENDACIÓN] {recommended_direction} ({analysis_confidence:.0f}% confianza) | {analysis_reason}",
             'success' if recommended_direction != 'BLOCK' else 'warning'
         )
         
@@ -9197,10 +9287,15 @@ class MT5AdaptiveTradingBot:
         elif recommended_direction == 'BLOCK' and force:
             self.add_log(f"[ABRIR] ⚠️ Análisis 4-velas bloqueó ({analysis_reason}), pero force=True permite continuar", 'warning')
         else:
-            # ⭐ ACTUALIZAR dirección sugerida con la recomendación del análisis inteligente
-            # Si el análisis dice que SELL es mejor, cambiar a SELL aunque inicialmente fuera BUY
-            direccion_sugerida = recommended_direction
-            self.add_log(f"[ABRIR] ✅ Dirección corregida por análisis 4-velas: {direccion_sugerida} (confianza: {analysis_confidence:.0f}%)", 'info')
+            # ⭐ ACTUALIZAR dirección sugerida CON ANÁLISIS 4-VELAS (solo en modo normal, NO en forzado)
+            # En modo forzado (scheduler), confiar completamente en la decisión del scheduler, no cambiar
+            if not force:
+                # Modo normal: usar análisis 4-velas para corregir dirección
+                direccion_sugerida = recommended_direction
+                self.add_log(f"[ABRIR] ✅ Dirección corregida por análisis 4-velas: {direccion_sugerida} (confianza: {analysis_confidence:.0f}%)", 'info')
+            else:
+                # Modo forzado: confiar en la decisión del scheduler, NO cambiar por análisis 4-velas
+                self.add_log(f"[ABRIR-FORZADA] ⚡ Manteniendo dirección del scheduler: {direccion_sugerida} (4-velas sugería: {recommended_direction})", 'info')
 
         # Si la microtendencia es contraria a la dirección sugerida, solo abrir si el score es MUY superior
         # (esto se aplica tanto en modo normal como forzado)
@@ -9945,6 +10040,16 @@ class MT5AdaptiveTradingBot:
 
     def start_bot(self):
         """Inicia el bot de trading"""
+        # ⭐ FIX: Verificar si el thread anterior sigue corriendo
+        if hasattr(self, 'bot_thread') and self.bot_thread and self.bot_thread.is_alive():
+            # Si el thread sigue corriendo, el bot ya está activo
+            if self.is_running:
+                return
+            # Si el thread está corriendo pero is_running es False, algo pasó - forzar parada
+            self.add_log("[START] Limpiando thread zombie del bot anterior", 'warning')
+            self.is_running = False
+            time.sleep(0.2)  # Esperar que el thread termins
+        
         if self.is_running:
             return
         if self._start_bot_in_progress:
@@ -10313,18 +10418,19 @@ class MT5AdaptiveTradingBot:
                                     self._forced_reopen_exec_lock.release()
                             else:
                                 # Mostrar progreso: cuánto falta
-                                remaining = int(next_open - now)
+                                remaining = next_open - now  # ← No truncar con int() para precisión
                                 if remaining > 0:
                                     # Log cada 10s o en últimos 5s
-                                    if remaining % 10 == 0 or remaining <= 5:
-                                        self._update_forced_open_counter(remaining)
+                                    remaining_int = int(remaining)
+                                    if remaining_int % 10 == 0 or remaining_int <= 5:
+                                        self._update_forced_open_counter(remaining_int)
                             
                             if not getattr(self, '_scheduler_running', True):
                                 self.add_log("[SCHEDULER] Bot detenido - Terminando scheduler", 'info')
                                 break
                             
-                            # Dormir 1s y revisar de nuevo
-                            time.sleep(1)
+                            # Dormir 0.5s para chequear frecuentemente (evita abrir temprano por truncado)
+                            time.sleep(0.5)
                             
                         except Exception as e:
                             self.add_log(f"[SCHEDULER] Error en ciclo: {str(e)[:60]}", 'error')
@@ -10333,17 +10439,17 @@ class MT5AdaptiveTradingBot:
                 self._forced_scheduler_thread = threading.Thread(target=_forced_reopen_scheduler_simple, daemon=True)
                 self._forced_scheduler_thread.start()
                 self.add_log("[SCHEDULER] ✅ Thread de reaperturas forzadas iniciado", 'success')
-                
-                # ⭐ INICIA MONITOR DE REVERSIÓN AGRESIVO (cada 2 segundos)
-                try:
-                    self._reversal_monitor_thread = threading.Thread(target=self._monitor_reversals_aggressive, daemon=True)
-                    self._reversal_monitor_thread.start()
-                    self.add_log("[⚡ REVERSIÓN] Monitor ultra-sensible iniciado (responde cada 2s)", 'success')
-                except Exception as e:
-                    self.add_log(f"[⚡ REVERSIÓN] Error al iniciar: {str(e)[:40]}", 'error')
 
         except Exception as e:
             self.add_log(f"[SCHEDULER] Error iniciando scheduler: {str(e)[:60]}", 'error')
+        
+        # ⭐ INICIA MONITOR DE REVERSIÓN AGRESIVO (cada 2 segundos) - FUERA DEL CONDICIONAL
+        try:
+            self._reversal_monitor_thread = threading.Thread(target=self._monitor_reversals_aggressive, daemon=True)
+            self._reversal_monitor_thread.start()
+            self.add_log("[⚡ REVERSIÓN] Monitor ultra-sensible iniciado (responde cada 2s)", 'success')
+        except Exception as e:
+            self.add_log(f"[⚡ REVERSIÓN] Error al iniciar: {str(e)[:40]}", 'error')
 
         # Run automatic calibration from logs and apply suggested parameters
         try:
@@ -10631,7 +10737,13 @@ class MT5AdaptiveTradingBot:
         self.manual_sell_btn.config(state='normal')
 
         self.pause_btn.config(state='normal')  # Habilitar botón de pausa
-        self._start_bot_in_progress = False
+        
+        try:
+            self._start_bot_in_progress = False
+        except Exception:
+            self._start_bot_in_progress = False
+        
+        self.add_log("\n[✅] BOT INICIADO CORRECTAMENTE - Sistema listo para operar", 'success')
 
     def _update_countdown_timer(self):
         """⭐ ACTUALIZAR COUNTDOWN del header continuamente cada 1 segundo.
@@ -11052,7 +11164,8 @@ class MT5AdaptiveTradingBot:
                 self._tp_sl_debug_count += 1
                 
                 if self._tp_sl_debug_count % 10 == 0:
-                    self.add_log(f"[GLOBAL TP/SL] Azules: ${total_gain:.2f} (TP: {tp_val}) | Rojas: ${total_loss:.2f} (SL: {-sl_val})", 'info')
+                    pass
+                    # self.add_log(f"[GLOBAL TP/SL] Azules: ${total_gain:.2f} (TP: {tp_val}) | Rojas: ${total_loss:.2f} (SL: {-sl_val})", 'info')
                 
                 # ⭐ CIERRE SELECTIVO DE POSICIONES ROJAS (pérdidas >= SL)
                 if sl_val > 0 and abs(total_loss) >= sl_val and red_positions:
@@ -11916,10 +12029,31 @@ class MT5AdaptiveTradingBot:
             except Exception:
                 pass
             
+            # ⭐ FIX: REANUDAR BOT CORRECTAMENTE DESPUÉS DE PAUSA POR OBJETIVO
             self.add_log(f"✅ Pausa terminada - Reanudando operaciones", 'success')
+            
+            # Limpiar estado de pausa para que el bot pueda continuar
+            self.pause_until = 0
+            self.bot_pausado = False
+            self.en_pausa = False
+            self.pause_reason = ""
+            
+            # Si el bot thread está muerto, reiniciarlo
+            if not self.bot_thread or not self.bot_thread.is_alive():
+                try:
+                    self.is_running = True
+                    self.bot_thread = threading.Thread(target=self.bot_loop, daemon=True)
+                    self.bot_thread.start()
+                    self.add_log("[START] Bot thread reiniciado correctamente", 'success')
+                except Exception as restart_error:
+                    self.add_log(f"[ERROR] No se pudo reiniciar bot thread: {str(restart_error)[:60]}", 'error')
 
         except Exception as e:
             self.add_log(f"Error en worker de pausa objetivo: {e}", 'error')
+            # Asegurar que se limpia el estado incluso si hay error
+            self.pause_until = 0
+            self.bot_pausado = False
+            self.en_pausa = False
 
     def _loss_pause_worker(self, pause_seconds):
         """Worker que espera y luego reanuda automáticamente - SOLO contador cada segundo"""
@@ -12002,7 +12136,7 @@ class MT5AdaptiveTradingBot:
                     rates = mt5_safe._ensure_rates_list(rates)
                     
                     if rates is None or len(rates) == 0:
-                        logger.warning("[MONITOR-MT5] No data from MT5, using fallback")
+                        # logger.warning("[MONITOR-MT5] No data from MT5, using fallback")
                         # Fallback a archivo si MT5 falla
                         # ⭐ Usar GOLD como símbolo por defecto
                         market_snaps = self.reload_market_snapshots(symbol='GOLD') or []
@@ -12020,7 +12154,7 @@ class MT5AdaptiveTradingBot:
                             }
                             market_snaps.append(snap)
                         
-                        logger.debug(f"[MONITOR-MT5] ✓ Obtenidas {len(market_snaps)} barras FRESCOS de MT5")
+                        # logger.debug(f"[MONITOR-MT5] ✓ Obtenidas {len(market_snaps)} barras FRESCOS de MT5")
                         
                         # ⭐ Guardar en cache compartido para que scheduler las use
                         try:
@@ -12030,7 +12164,7 @@ class MT5AdaptiveTradingBot:
                         except Exception:
                             pass
                 except Exception as e:
-                    logger.debug(f"[MONITOR-MT5] Error: {str(e)[:40]} - usando fallback")
+                    # logger.debug(f"[MONITOR-MT5] Error: {str(e)[:40]} - usando fallback")
                     # ⭐ Usar GOLD como símbolo por defecto en fallback
                     market_snaps = self.reload_market_snapshots(symbol='GOLD') or []
                 
