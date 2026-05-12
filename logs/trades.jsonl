@@ -686,3 +686,124 @@
 {"symbol": "GOLD", "ticket": 803011596, "type": "SELL", "entry_price": 4716.71, "sl": 4746.71, "tp": 4715.71, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-08T15:18:34.092712"}
 {"symbol": "GOLD", "ticket": 803012179, "type": "SELL", "entry_price": 4715.71, "sl": 4745.71, "tp": 4714.71, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-08T15:19:34.445830"}
 {"symbol": "GOLD", "ticket": 803012749, "type": "SELL", "entry_price": 4715.51, "sl": 4745.51, "tp": 4714.51, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-08T15:20:34.678208"}
+{"symbol": "GOLD", "ticket": 803262407, "type": "BUY", "entry_price": 4725.76, "sl": 0.0, "tp": 4726.76, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-11T08:16:36.140110"}
+{"symbol": "GOLD", "ticket": 803264326, "type": "BUY", "entry_price": 4727.47, "sl": 0.0, "tp": 4728.47, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-11T08:17:06.425815"}
+{"symbol": "GOLD", "ticket": 803270156, "type": "BUY", "entry_price": 4731.97, "sl": 4701.97, "tp": 4732.97, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-11T08:20:33.152321"}
+{"symbol": "GOLD", "ticket": 803276199, "type": "BUY", "entry_price": 4734.61, "sl": 0.0, "tp": 4735.61, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-11T08:23:50.061558"}
+{"symbol": "GOLD", "ticket": 803278508, "type": "BUY", "entry_price": 4631.73, "exit_price": 4733.73, "profit": 1.02, "volume": 0.01, "confidence": 50.0, "mode": "normal", "timestamp": "2026-05-11T08:25:21.929349"}
+{"symbol": "GOLD", "ticket": 803288243, "type": "BUY", "entry_price": 4734.88, "sl": 0.0, "tp": 4735.88, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-11T08:32:35.551341"}
+{"symbol": "GOLD", "ticket": 803288984, "type": "BUY", "entry_price": 4736.47, "sl": 0.0, "tp": 4737.47, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-11T08:33:16.402548"}
+{"symbol": "GOLD", "ticket": 803294432, "type": "BUY", "entry_price": 4736.97, "sl": 0.0, "tp": 4737.97, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-11T08:37:38.163491"}
+{"symbol": "GOLD", "ticket": 803294573, "type": "BUY", "entry_price": 4738.71, "sl": 0.0, "tp": 4739.71, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-11T08:37:48.242103"}
+{"symbol": "GOLD", "ticket": 803302488, "type": "SELL", "entry_price": 4744.67, "sl": 0.0, "tp": 4743.67, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-11T08:42:50.296365"}
+{"symbol": "GOLD", "ticket": 803303476, "type": "SELL", "entry_price": 4745.17, "sl": 0.0, "tp": 4744.17, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-11T08:43:31.415666"}
+{"symbol": "GOLD", "ticket": 803305232, "type": "BUY", "entry_price": 4743.75, "sl": 0.0, "tp": 4744.75, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-11T08:45:20.214708"}
+{"symbol": "GOLD", "ticket": 803306575, "type": "BUY", "entry_price": 4747.97, "sl": 0.0, "tp": 4748.97, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-11T08:45:51.008189"}
+{"symbol": "GOLD", "ticket": 803419835, "type": "BUY", "entry_price": 4732.15, "sl": 0.0, "tp": 4733.15, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-11T11:00:43.474642"}
+{"symbol": "GOLD", "ticket": 803420688, "type": "BUY", "entry_price": 4732.05, "sl": 0.0, "tp": 4733.05, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-11T11:02:38.062157"}
+{"symbol": "GOLD", "ticket": 803423958, "type": "BUY", "entry_price": 4727.9, "sl": 4697.9, "tp": 4728.9, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-11T11:13:24.499661"}
+{"symbol": "GOLD", "ticket": 804428877, "type": "BUY", "entry_price": 4725.29, "sl": 4695.29, "tp": 4726.29, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-11T14:33:52.148098"}
+{"symbol": "GOLD", "ticket": 804429821, "type": "BUY", "entry_price": 4727.38, "sl": 4697.38, "tp": 4728.38, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-11T14:36:57.864809"}
+{"symbol": "GOLD", "ticket": 803505696, "type": "BUY", "entry_price": 4730.9, "sl": 0.0, "tp": 4731.9, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-11T14:51:47.327146"}
+{"symbol": "GOLD", "ticket": 803506872, "type": "BUY", "entry_price": 4733.96, "sl": 4703.96, "tp": 4734.96, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-11T14:54:09.575387"}
+{"symbol": "GOLD", "ticket": 803507790, "type": "BUY", "entry_price": 4735.51, "sl": 4705.51, "tp": 4736.51, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-11T14:55:11.225980"}
+{"symbol": "GOLD", "ticket": 803514420, "type": "BUY", "entry_price": 4737.29, "sl": 4707.29, "tp": 4738.29, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-11T15:14:00.954378"}
+{"symbol": "GOLD", "ticket": 803569625, "type": "SELL", "entry_price": 4759.22, "sl": 0.0, "tp": 4758.22, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-11T19:35:36.420010"}
+{"symbol": "GOLD", "ticket": 803599001, "type": "BUY", "entry_price": 4729.06, "sl": 0.0, "tp": 4730.06, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-11T20:38:47.381476"}
+{"symbol": "GOLD", "ticket": 803936080, "type": "SELL", "entry_price": 4710.05, "sl": 0.0, "tp": 4709.05, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T07:46:29.321818"}
+{"symbol": "GOLD", "ticket": 803937908, "type": "SELL", "entry_price": 4708.23, "sl": 0.0, "tp": 4707.23, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T07:47:30.037560"}
+{"symbol": "GOLD", "ticket": 803939885, "type": "BUY", "entry_price": 4707.45, "sl": 0.0, "tp": 4708.45, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T07:50:01.082549"}
+{"symbol": "GOLD", "ticket": 803940318, "type": "BUY", "entry_price": 4708.36, "sl": 0.0, "tp": 4709.36, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T07:50:31.374052"}
+{"symbol": "GOLD", "ticket": 803943252, "type": "SELL", "entry_price": 4708.74, "sl": 0.0, "tp": 4707.74, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T07:53:22.046761"}
+{"symbol": "GOLD", "ticket": 803943252, "type": "SELL", "entry_price": 4602.33, "exit_price": 4707.33, "profit": 1.05, "volume": 0.01, "confidence": 50.0, "mode": "normal", "timestamp": "2026-05-12T07:56:00.388714"}
+{"symbol": "GOLD", "ticket": 803945961, "type": "SELL", "entry_price": 4704.41, "sl": 0.0, "tp": 4703.41, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T07:56:23.387418"}
+{"symbol": "GOLD", "ticket": 803947001, "type": "SELL", "entry_price": 4702.48, "sl": 0.0, "tp": 4701.48, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T07:56:53.720742"}
+{"symbol": "GOLD", "ticket": 803948949, "type": "BUY", "entry_price": 4702.91, "sl": 0.0, "tp": 4703.91, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T07:58:41.570425"}
+{"symbol": "GOLD", "ticket": 803949244, "type": "BUY", "entry_price": 4705.37, "sl": 0.0, "tp": 4706.37, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T07:59:11.944730"}
+{"symbol": "GOLD", "ticket": 803949736, "type": "BUY", "entry_price": 4706.37, "sl": 0.0, "tp": 4707.37, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T07:59:42.357822"}
+{"symbol": "GOLD", "ticket": 803950144, "type": "BUY", "entry_price": 4707.57, "sl": 0.0, "tp": 4708.57, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T08:00:12.716306"}
+{"symbol": "GOLD", "ticket": 803951489, "type": "BUY", "entry_price": 4707.12, "sl": 0.0, "tp": 4708.12, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T08:01:54.280747"}
+{"symbol": "GOLD", "ticket": 803971652, "type": "SELL", "entry_price": 4683.26, "sl": 0.0, "tp": 4682.26, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T08:16:41.793424"}
+{"symbol": "GOLD", "ticket": 803973942, "type": "SELL", "entry_price": 4682.25, "sl": 0.0, "tp": 4681.25, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T08:17:12.121425"}
+{"symbol": "GOLD", "ticket": 803975698, "type": "BUY", "entry_price": 4684.52, "sl": 0.0, "tp": 4685.52, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T08:18:35.553377"}
+{"symbol": "GOLD", "ticket": 803976588, "type": "BUY", "entry_price": 4686.93, "sl": 0.0, "tp": 4687.93, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T08:18:56.138125"}
+{"symbol": "GOLD", "ticket": 803978152, "type": "SELL", "entry_price": 4687.54, "sl": 0.0, "tp": 4686.54, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T08:20:18.816198"}
+{"symbol": "GOLD", "ticket": 803980025, "type": "SELL", "entry_price": 4689.82, "sl": 4719.82, "tp": 4688.82, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T08:22:08.237628"}
+{"symbol": "GOLD", "ticket": 803987829, "type": "SELL", "entry_price": 4687.65, "sl": 4717.65, "tp": 4686.65, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T08:30:14.524728"}
+{"symbol": "GOLD", "ticket": 803991768, "type": "SELL", "entry_price": 4690.02, "sl": 4720.02, "tp": 4689.02, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T08:33:21.018930"}
+{"symbol": "GOLD", "ticket": 803994081, "type": "BUY", "entry_price": 4686.95, "sl": 0.0, "tp": 4687.95, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T08:35:29.473707"}
+{"symbol": "GOLD", "ticket": 803995061, "type": "BUY", "entry_price": 4688.31, "sl": 0.0, "tp": 4689.31, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T08:36:09.652618"}
+{"symbol": "GOLD", "ticket": 803996567, "type": "BUY", "entry_price": 4692.73, "sl": 0.0, "tp": 4693.73, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T08:37:30.130245"}
+{"symbol": "GOLD", "ticket": 803997655, "type": "BUY", "entry_price": 4693.97, "sl": 0.0, "tp": 4694.97, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T08:38:10.219293"}
+{"symbol": "GOLD", "ticket": 803998549, "type": "BUY", "entry_price": 4694.98, "sl": 0.0, "tp": 4695.98, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T08:38:50.460933"}
+{"symbol": "GOLD", "ticket": 804025723, "type": "BUY", "entry_price": 4680.88, "sl": 0.0, "tp": 4681.88, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T09:01:14.637884"}
+{"symbol": "GOLD", "ticket": 804026614, "type": "BUY", "entry_price": 4682.45, "sl": 0.0, "tp": 4683.45, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T09:01:54.794963"}
+{"symbol": "GOLD", "ticket": 804038961, "type": "BUY", "entry_price": 4694.67, "sl": 0.0, "tp": 4695.67, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T09:13:44.070240"}
+{"symbol": "GOLD", "ticket": 805552452, "type": "BUY", "entry_price": 4653.79, "sl": 4623.79, "tp": 4654.79, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T10:28:07.077939"}
+{"symbol": "GOLD", "ticket": 805552982, "type": "BUY", "entry_price": 4654.86, "sl": 4624.86, "tp": 4655.86, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T10:28:17.252405"}
+{"symbol": "GOLD", "ticket": 805560163, "type": "SELL", "entry_price": 4655.5, "sl": 4660.5, "tp": 4654.5, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T10:31:20.235945"}
+{"symbol": "GOLD", "ticket": 805560163, "type": "SELL", "entry_price": 4551.19, "exit_price": 4654.19, "profit": 1.03, "volume": 0.01, "confidence": 50.0, "mode": "normal", "timestamp": "2026-05-12T10:31:29.915338"}
+{"symbol": "GOLD", "ticket": 805561129, "type": "SELL", "entry_price": 4654.22, "sl": 4659.22, "tp": 4653.22, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T10:31:30.318401"}
+{"symbol": "GOLD", "ticket": 805563261, "type": "SELL", "entry_price": 4659.04, "sl": 4664.04, "tp": 4658.04, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T10:32:42.803815"}
+{"symbol": "GOLD", "ticket": 805568665, "type": "SELL", "entry_price": 4663.16, "sl": 4668.16, "tp": 4662.16, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T10:34:57.479103"}
+{"symbol": "GOLD", "ticket": 805569210, "type": "SELL", "entry_price": 4661.49, "sl": 4666.49, "tp": 4660.49, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T10:35:18.064048"}
+{"symbol": "GOLD", "ticket": 805569544, "type": "SELL", "entry_price": 4659.38, "sl": 4664.38, "tp": 4658.38, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T10:35:28.241575"}
+{"symbol": "GOLD", "ticket": 805574173, "type": "BUY", "entry_price": 4666.13, "sl": 4661.13, "tp": 4667.13, "volume": 0.02, "mode": "entry", "timestamp": "2026-05-12T10:39:08.044441"}
+{"symbol": "GOLD", "ticket": 805576324, "type": "BUY", "entry_price": 4667.39, "sl": 4662.39, "tp": 4668.39, "volume": 0.02, "mode": "entry", "timestamp": "2026-05-12T10:39:48.614147"}
+{"symbol": "GOLD", "ticket": 805577495, "type": "BUY", "entry_price": 4667.26, "sl": 4662.26, "tp": 4668.26, "volume": 0.02, "mode": "entry", "timestamp": "2026-05-12T10:40:28.587064"}
+{"symbol": "GOLD", "ticket": 805577495, "type": "BUY", "entry_price": 4604.85, "exit_price": 4667.85, "profit": 1.26, "volume": 0.02, "confidence": 50.0, "mode": "normal", "timestamp": "2026-05-12T10:45:15.729961"}
+{"symbol": "GOLD", "ticket": 805584640, "type": "BUY", "entry_price": 4668.38, "sl": 4663.38, "tp": 4669.38, "volume": 0.02, "mode": "entry", "timestamp": "2026-05-12T10:45:50.408965"}
+{"symbol": "GOLD", "ticket": 805585353, "type": "BUY", "entry_price": 4667.26, "sl": 4662.26, "tp": 4668.26, "volume": 0.02, "mode": "entry", "timestamp": "2026-05-12T10:46:30.459645"}
+{"symbol": "GOLD", "ticket": 805585353, "type": "BUY", "entry_price": 4616.85, "exit_price": 4667.85, "profit": 1.02, "volume": 0.02, "confidence": 50.0, "mode": "normal", "timestamp": "2026-05-12T10:53:05.709694"}
+{"symbol": "GOLD", "ticket": 805591463, "type": "BUY", "entry_price": 4667.58, "sl": 4662.58, "tp": 4668.58, "volume": 0.02, "mode": "entry", "timestamp": "2026-05-12T10:53:12.296697"}
+{"symbol": "GOLD", "ticket": 805591463, "type": "BUY", "entry_price": 4611.13, "exit_price": 4668.13, "profit": 1.1400000000000001, "volume": 0.02, "confidence": 50.0, "mode": "normal", "timestamp": "2026-05-12T10:54:32.059821"}
+{"symbol": "GOLD", "ticket": 805592801, "type": "BUY", "entry_price": 4668.8, "sl": 4663.8, "tp": 4669.8, "volume": 0.02, "mode": "entry", "timestamp": "2026-05-12T10:54:33.005300"}
+{"symbol": "GOLD", "ticket": 805595084, "type": "BUY", "entry_price": 4668.47, "sl": 4663.47, "tp": 4669.47, "volume": 0.02, "mode": "entry", "timestamp": "2026-05-12T10:56:33.988314"}
+{"symbol": "GOLD", "ticket": 805595084, "type": "BUY", "entry_price": 4578.37, "exit_price": 4669.37, "profit": 1.8199999999999998, "volume": 0.02, "confidence": 50.0, "mode": "normal", "timestamp": "2026-05-12T10:56:38.584785"}
+{"symbol": "GOLD", "ticket": 805596641, "type": "BUY", "entry_price": 4669.22, "sl": 4664.22, "tp": 4670.22, "volume": 0.02, "mode": "entry", "timestamp": "2026-05-12T10:57:14.275291"}
+{"symbol": "GOLD", "ticket": 805597619, "type": "BUY", "entry_price": 4668.53, "sl": 4663.53, "tp": 4669.53, "volume": 0.02, "mode": "entry", "timestamp": "2026-05-12T10:57:54.710904"}
+{"symbol": "GOLD", "ticket": 805600858, "type": "BUY", "entry_price": 4666.4, "sl": 4661.4, "tp": 4667.4, "volume": 0.02, "mode": "entry", "timestamp": "2026-05-12T11:00:35.668024"}
+{"symbol": "GOLD", "ticket": 805600858, "type": "BUY", "entry_price": 4596.24, "exit_price": 4667.24, "profit": 1.42, "volume": 0.02, "confidence": 50.0, "mode": "normal", "timestamp": "2026-05-12T11:00:45.611491"}
+{"symbol": "GOLD", "ticket": 805597619, "type": "BUY", "entry_price": 4603.1, "exit_price": 4669.1, "profit": 1.32, "volume": 0.02, "confidence": 50.0, "mode": "normal", "timestamp": "2026-05-12T11:00:59.688919"}
+{"symbol": "GOLD", "ticket": 805601853, "type": "BUY", "entry_price": 4669.81, "sl": 4664.81, "tp": 4670.81, "volume": 0.02, "mode": "entry", "timestamp": "2026-05-12T11:01:15.993333"}
+{"symbol": "GOLD", "ticket": 805602751, "type": "BUY", "entry_price": 4670.62, "sl": 4665.62, "tp": 4671.62, "volume": 0.02, "mode": "entry", "timestamp": "2026-05-12T11:01:56.050078"}
+{"symbol": "GOLD", "ticket": 805601853, "type": "BUY", "entry_price": 4614.46, "exit_price": 4670.46, "profit": 1.12, "volume": 0.02, "confidence": 50.0, "mode": "normal", "timestamp": "2026-05-12T11:03:08.131380"}
+{"symbol": "GOLD", "ticket": 805604261, "type": "BUY", "entry_price": 4670.91, "sl": 4665.91, "tp": 4671.91, "volume": 0.02, "mode": "entry", "timestamp": "2026-05-12T11:03:16.375704"}
+{"symbol": "GOLD", "ticket": 805605398, "type": "BUY", "entry_price": 4669.33, "sl": 4664.33, "tp": 4670.33, "volume": 0.02, "mode": "entry", "timestamp": "2026-05-12T11:03:56.429751"}
+{"symbol": "GOLD", "ticket": 805605398, "type": "BUY", "entry_price": 4597.13, "exit_price": 4670.13, "profit": 1.46, "volume": 0.02, "confidence": 50.0, "mode": "normal", "timestamp": "2026-05-12T11:04:02.387026"}
+{"symbol": "GOLD", "ticket": 805605726, "type": "BUY", "entry_price": 4671.07, "sl": 4666.07, "tp": 4672.07, "volume": 0.02, "mode": "entry", "timestamp": "2026-05-12T11:04:36.667174"}
+{"symbol": "GOLD", "ticket": 805606769, "type": "BUY", "entry_price": 4671.34, "sl": 4666.34, "tp": 4672.34, "volume": 0.02, "mode": "entry", "timestamp": "2026-05-12T11:05:17.128516"}
+{"symbol": "GOLD", "ticket": 804154601, "type": "BUY", "entry_price": 4670.19, "sl": 0.0, "tp": 4671.19, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T11:10:34.094613"}
+{"symbol": "GOLD", "ticket": 804155076, "type": "BUY", "entry_price": 4671.06, "sl": 0.0, "tp": 4672.06, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T11:11:54.901630"}
+{"symbol": "GOLD", "ticket": 805615626, "type": "SELL", "entry_price": 4671.65, "sl": 4676.65, "tp": 4670.65, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T11:15:12.497298"}
+{"symbol": "GOLD", "ticket": 805615743, "type": "SELL", "entry_price": 4671.62, "sl": 4676.62, "tp": 4670.62, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T11:15:22.600086"}
+{"symbol": "GOLD", "ticket": 804158921, "type": "SELL", "entry_price": 4673.31, "sl": 0.0, "tp": 4672.31, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T11:18:03.892997"}
+{"symbol": "GOLD", "ticket": 804159532, "type": "SELL", "entry_price": 4670.92, "sl": 0.0, "tp": 4669.92, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T11:19:24.605833"}
+{"symbol": "GOLD", "ticket": 804164598, "type": "BUY", "entry_price": 4669.41, "sl": 0.0, "tp": 4670.41, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T11:29:24.879893"}
+{"symbol": "GOLD", "ticket": 804166657, "type": "BUY", "entry_price": 4668.02, "sl": 0.0, "tp": 4669.02, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T11:32:46.396553"}
+{"symbol": "GOLD", "ticket": 804168383, "type": "BUY", "entry_price": 4670.09, "sl": 0.0, "tp": 4671.09, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T11:36:48.119515"}
+{"symbol": "GOLD", "ticket": 805641655, "type": "BUY", "entry_price": 4669.1, "sl": 4639.1, "tp": 4670.1, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T11:46:58.254237"}
+{"symbol": "GOLD", "ticket": 805641868, "type": "BUY", "entry_price": 4668.8, "sl": 4638.8, "tp": 4669.8, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T11:47:08.381869"}
+{"symbol": "GOLD", "ticket": 805643822, "type": "BUY", "entry_price": 4670.3, "sl": 4640.3, "tp": 4671.3, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T11:49:33.485628"}
+{"symbol": "GOLD", "ticket": 805644082, "type": "BUY", "entry_price": 4670.05, "sl": 4640.05, "tp": 4671.05, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T11:49:43.628991"}
+{"symbol": "GOLD", "ticket": 805646108, "type": "BUY", "entry_price": 4672.12, "sl": 4642.12, "tp": 4673.12, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T11:51:59.902661"}
+{"symbol": "GOLD", "ticket": 805646324, "type": "BUY", "entry_price": 4672.28, "sl": 4642.28, "tp": 4673.28, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T11:52:08.553127"}
+{"symbol": "GOLD", "ticket": 805651542, "type": "SELL", "entry_price": 4673.19, "sl": 0.0, "tp": 4672.19, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T11:56:37.275466"}
+{"symbol": "GOLD", "ticket": 805654018, "type": "SELL", "entry_price": 4672.43, "sl": 0.0, "tp": 4671.43, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T11:59:18.464531"}
+{"symbol": "GOLD", "ticket": 805654555, "type": "SELL", "entry_price": 4670.95, "sl": 0.0, "tp": 4669.95, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T11:59:58.923802"}
+{"symbol": "GOLD", "ticket": 804188623, "type": "BUY", "entry_price": 4677.48, "sl": 0.0, "tp": 4678.48, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T12:13:50.308105"}
+{"symbol": "GOLD", "ticket": 804189822, "type": "BUY", "entry_price": 4679.48, "sl": 0.0, "tp": 4680.48, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T12:16:31.027679"}
+{"symbol": "GOLD", "ticket": 804191895, "type": "SELL", "entry_price": 4679.88, "sl": 0.0, "tp": 4678.88, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T12:20:25.228145"}
+{"symbol": "GOLD", "ticket": 804194460, "type": "SELL", "entry_price": 4681.16, "sl": 0.0, "tp": 4680.16, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T12:25:26.864952"}
+{"symbol": "GOLD", "ticket": 804197090, "type": "SELL", "entry_price": 4679.82, "sl": 0.0, "tp": 4678.82, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T12:29:27.989281"}
+{"symbol": "GOLD", "ticket": 804197510, "type": "SELL", "entry_price": 4679.67, "sl": 0.0, "tp": 4678.67, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T12:30:28.224481"}
+{"symbol": "GOLD", "ticket": 804197965, "type": "SELL", "entry_price": 4678.29, "sl": 0.0, "tp": 4677.29, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T12:31:28.378715"}
+{"symbol": "GOLD", "ticket": 804199367, "type": "SELL", "entry_price": 4677.74, "sl": 0.0, "tp": 4676.74, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T12:34:28.890567"}
+{"symbol": "GOLD", "ticket": 804201674, "type": "BUY", "entry_price": 4679.03, "sl": 4649.03, "tp": 4680.03, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T12:43:06.250668"}
+{"symbol": "GOLD", "ticket": 804202406, "type": "BUY", "entry_price": 4680.11, "sl": 4650.11, "tp": 4681.11, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T12:45:06.648531"}
+{"symbol": "GOLD", "ticket": 804213694, "type": "SELL", "entry_price": 4683.53, "sl": 0.0, "tp": 4683.03, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T13:24:01.627212"}
+{"symbol": "GOLD", "ticket": 804213885, "type": "SELL", "entry_price": 4682.63, "sl": 0.0, "tp": 4682.13, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T13:25:01.832633"}
+{"symbol": "GOLD", "ticket": 804218695, "type": "BUY", "entry_price": 4689.61, "sl": 0.0, "tp": 4690.61, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T13:34:28.313831"}
+{"symbol": "GOLD", "ticket": 804219807, "type": "BUY", "entry_price": 4692.71, "sl": 0.0, "tp": 4693.71, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T13:36:29.630444"}
+{"symbol": "GOLD", "ticket": 804223603, "type": "BUY", "entry_price": 4697.35, "sl": 0.0, "tp": 4698.35, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T13:44:22.291465"}
+{"symbol": "GOLD", "ticket": 804237749, "type": "SELL", "entry_price": 4702.63, "sl": 0.0, "tp": 4701.63, "volume": 0.01, "mode": "entry", "timestamp": "2026-05-12T14:24:26.433334"}
